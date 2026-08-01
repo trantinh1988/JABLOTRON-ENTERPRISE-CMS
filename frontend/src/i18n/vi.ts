@@ -131,6 +131,9 @@ export const vi = {
   connectionHintMock: 'Tủ đang chạy ở chế độ mô phỏng (CMS_USB_MOCK_MODE=true). Trạng thái cảm biến được sinh ngẫu nhiên.',
   connectionHintUsb: 'Tủ đã kết nối qua USB HID. Trạng thái cập nhật tự động từ tủ thật.',
   connectionHintDisconnected: 'Tủ chưa kết nối USB. Cắm cáp Link Jablotron hoặc bật chế độ mô phỏng để thử nghiệm.',
+  usbConnectTitle: 'Chưa kết nối USB — cần cấu hình backend',
+  usbConnectSteps:
+    'Windows: cd backend → pip install -r requirements.txt → set CMS_USB_MOCK_MODE=false → uvicorn app.main:app --host 0.0.0.0 --port 8000 (chạy trực tiếp trên PC, không Docker).',
   summaryZones: 'Số vùng',
   summaryUsers: 'Số user',
   summaryInputs: 'Số địa chỉ',

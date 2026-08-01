@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -56,7 +57,41 @@ class UsbDeviceManager:
         self._stop = asyncio.Event()
         self._path_to_panel: dict[str, str] = {}
         self._sessions: dict[str, _HidSession] = {}
+        self._hid_available: bool = hid is not None
+        self._devices_found: int = 0
+        self._last_error: str | None = None
         self.panel_bus.set_command_sender(self)
+
+    def get_status(self) -> dict[str, Any]:
+        connected = sum(1 for p in self.panel_bus.panels.values() if p.connection == "usb")
+        return {
+            "hid_available": self._hid_available,
+            "devices_found": self._devices_found,
+            "panels_usb_connected": connected,
+            "last_error": self._last_error,
+            "hint": self._connection_hint(),
+        }
+
+    def _connection_hint(self) -> str | None:
+        if self.settings.usb_mock_mode:
+            return None
+        if not self._hid_available:
+            return "Chưa cài hidapi. Cài: pip install hidapi"
+        if self._devices_found > 0:
+            return None
+        if os.path.exists("/.dockerenv"):
+            return (
+                "Backend đang chạy trong Docker và không thấy thiết bị USB Jablotron. "
+                "Trên Windows: chạy backend trực tiếp trên PC (không dùng Docker), "
+                "hoặc đặt CMS_USB_MOCK_MODE=true để demo."
+            )
+        return (
+            "Không phát hiện Jablotron Link (VID 16D6 / PID 0008). "
+            "Kiểm tra cáp USB, driver và chỉ có một phần mềm truy cập HID."
+        )
+
+    def _set_usb_error(self, detail: str) -> None:
+        self._last_error = detail
 
     async def start(self) -> None:
         if self._task and not self._task.done():
@@ -118,10 +153,12 @@ class UsbDeviceManager:
         next_index = 1
         while not self._stop.is_set():
             if hid is None:
+                self._devices_found = 0
+                self._set_usb_error("Chưa cài hidapi. Cài: pip install hidapi")
                 await self.event_hub.publish(
                     {
                         "type": "usb_error",
-                        "detail": "Chưa cài hidapi. Cài: pip install hidapi",
+                        "detail": self._last_error,
                     }
                 )
                 try:
@@ -148,7 +185,12 @@ class UsbDeviceManager:
                             next_index += 1
                     await self._ensure_session(panel_id, path_str)
                     await self._poll_session(panel_id)
+                self._devices_found = len(found_paths)
+                if found_paths:
+                    self._last_error = None
             except Exception as exc:  # noqa: BLE001
+                self._devices_found = 0
+                self._set_usb_error(str(exc))
                 await self.event_hub.publish({"type": "usb_error", "detail": str(exc)})
 
             for panel_id, session in list(self._sessions.items()):

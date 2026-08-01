@@ -155,15 +155,22 @@ async function parseError(res: Response): Promise<string> {
   }
 }
 
+export type HealthStatus = {
+  status: string
+  app: string
+  license_mode: string
+  usb_mock_mode: boolean
+  usb_hid_available: boolean
+  usb_devices_found: number
+  usb_panels_connected: number
+  usb_last_error: string | null
+  usb_hint: string | null
+}
+
 export async function getHealth() {
   const res = await fetch('/api/health')
   if (!res.ok) throw new Error(await parseError(res))
-  return res.json() as Promise<{
-    status: string
-    app: string
-    license_mode: string
-    usb_mock_mode: boolean
-  }>
+  return res.json() as Promise<HealthStatus>
 }
 
 export async function getLicenseStatus(): Promise<LicenseStatus> {

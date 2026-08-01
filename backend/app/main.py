@@ -57,11 +57,17 @@ def create_app() -> FastAPI:
     async def health() -> HealthOut:
         settings = get_settings()
         lic = get_license_service().get_status()
+        usb_status = get_usb_manager().get_status()
         return HealthOut(
             status="ok",
             app=settings.app_name,
             license_mode=lic.mode,
             usb_mock_mode=settings.usb_mock_mode,
+            usb_hid_available=bool(usb_status["hid_available"]),
+            usb_devices_found=int(usb_status["devices_found"]),
+            usb_panels_connected=int(usb_status["panels_usb_connected"]),
+            usb_last_error=usb_status["last_error"],
+            usb_hint=usb_status["hint"],
         )
 
     app.include_router(license.router)

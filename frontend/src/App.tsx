@@ -44,6 +44,8 @@ export default function App() {
                 panels={data.panels}
                 devices={data.devices}
                 writeAllowed={data.writeAllowed}
+                mockMode={data.mockMode}
+                usbHint={data.usbHint}
                 onRefresh={data.refresh}
               />
             }
@@ -55,6 +57,8 @@ export default function App() {
                 writeAllowed={data.writeAllowed}
                 onRefresh={data.refresh}
                 lastEvent={data.lastEvent}
+                mockMode={data.mockMode}
+                usbHint={data.usbHint}
               />
             }
           />

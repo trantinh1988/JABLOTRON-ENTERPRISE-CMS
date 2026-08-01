@@ -19,6 +19,7 @@ export function useCmsData() {
   const [devices, setDevices] = useState<Device[]>([])
   const [maps, setMaps] = useState<FloorMap[]>([])
   const [mockMode, setMockMode] = useState<boolean | null>(null)
+  const [usbHint, setUsbHint] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
 
   const { connected, events, lastEvent } = useEventStream(true)
@@ -36,7 +37,10 @@ export function useCmsData() {
       setPanels(pnl)
       setDevices(allDevices)
       setMaps(allMaps)
-      if (health) setMockMode(health.usb_mock_mode)
+      if (health) {
+        setMockMode(health.usb_mock_mode)
+        setUsbHint(health.usb_hint)
+      }
       setLoadError(null)
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e))
@@ -98,6 +102,11 @@ export function useCmsData() {
       )
     }
 
+    if (lastEvent.type === 'usb_error' && lastEvent.detail) {
+      setUsbHint(String(lastEvent.detail))
+      void refresh()
+    }
+
     if (shouldRefreshOnEvent(lastEvent)) {
       void refresh()
     }
@@ -111,6 +120,7 @@ export function useCmsData() {
     devices,
     maps,
     mockMode,
+    usbHint,
     loadError,
     connected,
     events,

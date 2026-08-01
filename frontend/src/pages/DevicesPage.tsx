@@ -27,6 +27,8 @@ type Props = {
   panels: Panel[]
   devices: Device[]
   writeAllowed: boolean
+  mockMode: boolean | null
+  usbHint: string | null
   onRefresh: () => Promise<void>
 }
 
@@ -34,7 +36,7 @@ const TYPES = Object.keys(deviceTypeLabel)
 
 type FormMode = 'device' | 'panel' | null
 
-export function DevicesPage({ panels, devices, writeAllowed, onRefresh }: Props) {
+export function DevicesPage({ panels, devices, writeAllowed, mockMode, usbHint, onRefresh }: Props) {
   const [editing, setEditing] = useState<Device | null>(null)
   const [editingPanel, setEditingPanel] = useState<Panel | null>(null)
   const [formMode, setFormMode] = useState<FormMode>(null)
@@ -279,6 +281,13 @@ export function DevicesPage({ panels, devices, writeAllowed, onRefresh }: Props)
 
       {!writeAllowed && (
         <p className="mb-3 rounded-md bg-warn/10 px-3 py-2 text-xs text-warn">{vi.readOnlyHint}</p>
+      )}
+      {mockMode === false && usbHint && panels.every((p) => p.connection !== 'usb') && (
+        <div className="mb-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2.5 text-xs text-warn">
+          <p className="font-semibold">{vi.usbConnectTitle}</p>
+          <p className="mt-1 text-warn/90">{usbHint}</p>
+          <p className="mt-2 font-mono text-[10px] text-warn/80">{vi.usbConnectSteps}</p>
+        </div>
       )}
       {error && <p className="mb-3 rounded-md bg-danger/10 px-3 py-2 text-xs text-danger">{error}</p>}
       {info && <p className="mb-3 rounded-md bg-ok/10 px-3 py-2 text-xs text-ok">{info}</p>}

@@ -64,9 +64,11 @@ type Props = {
   writeAllowed: boolean
   onRefresh: () => Promise<void>
   lastEvent: CmsEvent | null
+  mockMode: boolean | null
+  usbHint: string | null
 }
 
-export function PanelSetupPage({ writeAllowed, onRefresh, lastEvent }: Props) {
+export function PanelSetupPage({ writeAllowed, onRefresh, lastEvent, mockMode, usbHint }: Props) {
   const { panelId = '' } = useParams()
   const [tab, setTab] = useState<Tab>('overview')
   const [panel, setPanel] = useState<Panel | null>(null)
@@ -291,7 +293,9 @@ export function PanelSetupPage({ writeAllowed, onRefresh, lastEvent }: Props) {
         />
       )}
 
-      {tab === 'connection' && panel && <ConnectionTab panel={panel} />}
+      {tab === 'connection' && panel && (
+        <ConnectionTab panel={panel} mockMode={mockMode} usbHint={usbHint} />
+      )}
     </div>
   )
 }
@@ -364,7 +368,15 @@ function Stat({ label, value }: { label: string; value: number }) {
   )
 }
 
-function ConnectionTab({ panel }: { panel: Panel }) {
+function ConnectionTab({
+  panel,
+  mockMode,
+  usbHint,
+}: {
+  panel: Panel
+  mockMode: boolean | null
+  usbHint: string | null
+}) {
   const hint =
     panel.connection === 'usb'
       ? vi.connectionHintUsb
@@ -382,6 +394,13 @@ function ConnectionTab({ panel }: { panel: Panel }) {
         <Row label="armed_state" value={labelOf(armedStateLabel, panel.armed_state)} />
       </dl>
       <p className="mt-4 text-xs text-steel/70">{hint}</p>
+      {mockMode === false && panel.connection !== 'usb' && usbHint && (
+        <div className="mt-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
+          <p className="font-semibold">{vi.usbConnectTitle}</p>
+          <p className="mt-1">{usbHint}</p>
+          <p className="mt-2 font-mono text-[10px] opacity-90">{vi.usbConnectSteps}</p>
+        </div>
+      )}
     </Card>
   )
 }

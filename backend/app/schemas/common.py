@@ -200,6 +200,11 @@ class HealthOut(BaseModel):
     app: str
     license_mode: str
     usb_mock_mode: bool
+    usb_hid_available: bool = False
+    usb_devices_found: int = 0
+    usb_panels_connected: int = 0
+    usb_last_error: str | None = None
+    usb_hint: str | None = None
 
 
 class FloorMapOut(BaseModel):
