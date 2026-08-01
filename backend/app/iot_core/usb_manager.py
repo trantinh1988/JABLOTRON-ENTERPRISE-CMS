@@ -60,7 +60,45 @@ class UsbDeviceManager:
         self._hid_available: bool = hid is not None
         self._devices_found: int = 0
         self._last_error: str | None = None
+        self._scanned_devices: list[dict[str, Any]] = []
+        self._last_scan_log_at: float = 0.0
         self.panel_bus.set_command_sender(self)
+
+    def _enumerate_hid_devices(self) -> list[dict[str, Any]]:
+        if hid is None:
+            return []
+        vid = self.settings.jablotron_vendor_id
+        pid = self.settings.jablotron_product_id
+        seen_paths: set[str] = set()
+        results: list[dict[str, Any]] = []
+
+        def add(info: dict[str, Any]) -> None:
+            path_str = self._path_str(info.get("path"))
+            if not path_str or path_str in seen_paths:
+                return
+            seen_paths.add(path_str)
+            results.append(
+                {
+                    "path": path_str,
+                    "vendor_id": info.get("vendor_id"),
+                    "product_id": info.get("product_id"),
+                    "vendor_hex": f"0x{int(info.get('vendor_id', 0)):04X}",
+                    "product_hex": f"0x{int(info.get('product_id', 0)):04X}",
+                    "product_string": info.get("product_string") or "",
+                    "manufacturer_string": info.get("manufacturer_string") or "",
+                }
+            )
+
+        for info in hid.enumerate(vid, pid):
+            add(info)
+        if not results and pid:
+            for info in hid.enumerate(vid, 0):
+                add(info)
+        if not results:
+            for info in hid.enumerate(0, 0):
+                if int(info.get("vendor_id", 0)) == vid:
+                    add(info)
+        return results
 
     def get_status(self) -> dict[str, Any]:
         connected = sum(1 for p in self.panel_bus.panels.values() if p.connection == "usb")
@@ -70,6 +108,8 @@ class UsbDeviceManager:
             "panels_usb_connected": connected,
             "last_error": self._last_error,
             "hint": self._connection_hint(),
+            "scanned_devices": list(self._scanned_devices),
+            "active_sessions": list(self._sessions.keys()),
         }
 
     def _connection_hint(self) -> str | None:
@@ -169,27 +209,46 @@ class UsbDeviceManager:
 
             found_paths: set[str] = set()
             try:
-                for info in hid.enumerate(
-                    self.settings.jablotron_vendor_id,
-                    self.settings.jablotron_product_id,
-                ):
-                    path_str = self._path_str(info.get("path"))
-                    if not path_str:
-                        continue
+                scanned = self._enumerate_hid_devices()
+                self._scanned_devices = scanned
+                for dev in scanned:
+                    path_str = dev["path"]
                     found_paths.add(path_str)
-                    panel_id = await self._ensure_panel_for_path(path_str, next_index)
-                    if path_str not in self._path_to_panel.values() and panel_id.startswith("PANEL_"):
-                        try:
-                            next_index = max(next_index, int(panel_id.removeprefix("PANEL_")) + 1)
-                        except ValueError:
-                            next_index += 1
-                    await self._ensure_session(panel_id, path_str)
-                    await self._poll_session(panel_id)
+                    try:
+                        panel_id = await self._ensure_panel_for_path(path_str, next_index)
+                        if path_str not in self._path_to_panel.values() and panel_id.startswith("PANEL_"):
+                            try:
+                                next_index = max(next_index, int(panel_id.removeprefix("PANEL_")) + 1)
+                            except ValueError:
+                                next_index += 1
+                        await self._ensure_session(panel_id, path_str)
+                        await self._poll_session(panel_id)
+                    except Exception as exc:  # noqa: BLE001
+                        msg = f"Không mở được USB {path_str}: {exc}"
+                        self._set_usb_error(msg)
+                        await self.event_hub.publish({"type": "usb_error", "detail": msg})
                 self._devices_found = len(found_paths)
-                if found_paths:
+                if found_paths and not self._sessions:
+                    self._set_usb_error(
+                        "Thấy thiết bị USB nhưng không mở được HID — kiểm tra quyền (plugdev/udev) "
+                        "hoặc tắt phần mềm Jablotron khác đang chiếm cổng."
+                    )
+                elif found_paths:
                     self._last_error = None
+                elif time.monotonic() - self._last_scan_log_at > 30:
+                    import logging
+
+                    logging.getLogger("uvicorn.error").warning(
+                        "USB scan: 0 thiết bị Jablotron (VID=0x%04X PID=0x%04X). "
+                        "Host: lsusb | grep -i 16d6 — nếu host thấy mà container không: "
+                        "dùng ./scripts/start-backend-usb.sh + docker-compose.usb-host.yml",
+                        self.settings.jablotron_vendor_id,
+                        self.settings.jablotron_product_id,
+                    )
+                    self._last_scan_log_at = time.monotonic()
             except Exception as exc:  # noqa: BLE001
                 self._devices_found = 0
+                self._scanned_devices = []
                 self._set_usb_error(str(exc))
                 await self.event_hub.publish({"type": "usb_error", "detail": str(exc)})
 
@@ -249,7 +308,13 @@ class UsbDeviceManager:
         if existing:
             self._close_session(existing)
         device = hid.device()
-        device.open_path(path_str.encode("utf-8") if isinstance(path_str, str) else path_str)
+        path_arg: bytes | str = path_str
+        if isinstance(path_str, str):
+            path_arg = path_str.encode("utf-8")
+        try:
+            device.open_path(path_arg)
+        except Exception:
+            device.open_path(path_str)
         session = _HidSession(panel_id=panel_id, usb_path=path_str, device=device)
         self._sessions[panel_id] = session
         for pkt in build_init_sequence():

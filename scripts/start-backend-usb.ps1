@@ -27,6 +27,8 @@ New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
 
 $dbFile = (Join-Path $DataDir "cms.db") -replace '\\', '/'
 $env:CMS_USB_MOCK_MODE = "false"
+$env:CMS_JABLOTRON_VENDOR_ID = "0x16D6"
+$env:CMS_JABLOTRON_PRODUCT_ID = "0x0008"
 $env:CMS_PUBLIC_KEY_PATH = $Keys
 $env:CMS_DATABASE_URL = "sqlite+aiosqlite:///$dbFile"
 $env:CMS_HWID_CACHE_PATH = (Join-Path $DataDir "hwid.cache")

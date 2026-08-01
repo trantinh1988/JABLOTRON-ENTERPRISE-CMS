@@ -5,8 +5,9 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from typing import Any
 
-from app.api import events, license, maps, panels, ws
+from app.api import events, license, maps, panels, usb, ws
 from app.core.config import get_settings
 from app.db.session import init_db
 from app.iot_core.event_store import register_event_persistence
@@ -24,17 +25,30 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     license_service = get_license_service()
     await license_service.load_from_db()
     await load_panels_into_bus(get_panel_bus())
-    usb = get_usb_manager()
-    await usb.start()
+    usb_mgr = get_usb_manager()
+    await usb_mgr.start()
+    _log_usb_startup(usb_mgr)
     try:
         yield
     finally:
-        await usb.stop()
+        await usb_mgr.stop()
+
+
+def _log_usb_startup(_usb_mgr: Any) -> None:
+    import logging
+
+    settings = get_settings()
+    log = logging.getLogger("uvicorn.error")
+    log.info(
+        "USB manager started (mock=%s). Quét nền mỗi %ss — xem /api/usb/status",
+        settings.usb_mock_mode,
+        settings.usb_scan_interval_sec,
+    )
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title=settings.app_name, lifespan=lifespan)
+    app = FastAPI(title=settings.app_name, lifespan=lifespan, redirect_slashes=False)
 
     app.add_middleware(
         CORSMiddleware,
@@ -71,6 +85,7 @@ def create_app() -> FastAPI:
         )
 
     app.include_router(license.router)
+    app.include_router(usb.router)
     app.include_router(panels.router)
     app.include_router(panels.devices_router)
     app.include_router(maps.router)

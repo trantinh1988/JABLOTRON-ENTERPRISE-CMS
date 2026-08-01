@@ -29,6 +29,8 @@ pip install -r requirements.txt -q
 mkdir -p "$DATA_DIR"
 
 export CMS_USB_MOCK_MODE=false
+export CMS_JABLOTRON_VENDOR_ID=0x16D6
+export CMS_JABLOTRON_PRODUCT_ID=0x0008
 export CMS_PUBLIC_KEY_PATH="$KEYS"
 export CMS_DATABASE_URL="sqlite+aiosqlite:///$DATA_DIR/cms.db"
 export CMS_HWID_CACHE_PATH="$DATA_DIR/hwid.cache"

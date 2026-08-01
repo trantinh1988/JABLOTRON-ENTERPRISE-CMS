@@ -22,13 +22,23 @@ class Settings(BaseSettings):
     license_store_path: Path = BACKEND_ROOT / "data" / "license.json"
     hwid_cache_path: Path = BACKEND_ROOT / "data" / "hwid.cache"
 
-    # Jablotron Link USB (JA-100+) — VID/PID phổ biến từ cộng đồng HA jablotron100
+    # Jablotron Link USB (JA-100+) — VID 0x16D6 = 5846, PID 0x0008 = 8
     jablotron_vendor_id: int = 0x16D6
     jablotron_product_id: int = 0x0008
 
     usb_mock_mode: bool = False
     usb_scan_interval_sec: float = 2.0
     mock_event_interval_sec: float = 5.0
+
+    @field_validator("jablotron_vendor_id", "jablotron_product_id", mode="before")
+    @classmethod
+    def parse_usb_id(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            text = value.strip()
+            if text.lower().startswith("0x"):
+                return int(text, 16)
+            return int(text)
+        return value
 
     # NoDecode: accept comma-separated env (CMS_CORS_ORIGINS) without JSON parsing
     cors_origins: Annotated[list[str], NoDecode] = Field(
