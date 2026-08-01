@@ -31,6 +31,7 @@ export default function App() {
                 panels={data.panels}
                 devices={data.devices}
                 writeAllowed={data.writeAllowed}
+                mockMode={data.mockMode}
                 events={data.events}
                 loadError={data.loadError}
                 onRefresh={data.refresh}

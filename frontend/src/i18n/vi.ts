@@ -34,6 +34,8 @@ export const vi = {
   readOnlyHint: 'Chế độ chỉ đọc — cần bản quyền hợp lệ để thao tác ghi.',
   noPanels: 'Chưa phát hiện tủ nào.',
   pickPanel: 'Chọn ít nhất một tủ.',
+  panelNotControllable: (ids: string) =>
+    `${ids}: Tủ chưa kết nối USB — không thể bật/tắt bảo vệ từ CMS. Kiểm tra tab Kết nối hoặc ./scripts/start-backend-usb.sh`,
   arm: 'Bật bảo vệ',
   disarm: 'Tắt bảo vệ',
   partial: 'Bảo vệ một phần',
@@ -131,9 +133,9 @@ export const vi = {
   connectionHintMock: 'Tủ đang chạy ở chế độ mô phỏng (CMS_USB_MOCK_MODE=true). Trạng thái cảm biến được sinh ngẫu nhiên.',
   connectionHintUsb: 'Tủ đã kết nối qua USB HID. Trạng thái cập nhật tự động từ tủ thật.',
   connectionHintDisconnected: 'Tủ chưa kết nối USB. Cắm cáp Link Jablotron hoặc bật chế độ mô phỏng để thử nghiệm.',
-  usbConnectTitle: 'Chưa kết nối USB — chạy backend trên PC',
+  usbConnectTitle: 'Chưa kết nối USB — chạy backend trên máy chủ',
   usbConnectSteps:
-    '1) Dừng Docker backend: docker compose down  |  2) Terminal 1: .\\scripts\\start-backend-usb.ps1  |  3) Terminal 2: docker compose -f docker-compose.usb-host.yml up -d  |  4) Cắm USB Link → mở http://127.0.0.1:8080',
+    'Linux: chmod +x scripts/start-backend-usb.sh && ./scripts/start-backend-usb.sh  |  Terminal 2: docker compose -f docker-compose.usb-host.yml up -d  |  Cắm USB Link',
   summaryZones: 'Số vùng',
   summaryUsers: 'Số user',
   summaryInputs: 'Số địa chỉ',
@@ -258,6 +260,20 @@ export const actionLabel: Record<string, string> = {
   arm: 'Bật bảo vệ',
   disarm: 'Tắt bảo vệ',
   partial: 'Bảo vệ một phần',
+}
+
+/** Mã lỗi từ backend (command_error.detail, group-action results). */
+export const commandErrorLabel: Record<string, string> = {
+  panel_not_connected_usb:
+    'Tủ chưa kết nối USB — cắm cáp Link Jablotron và chạy backend có quyền USB (./scripts/start-backend-usb.sh)',
+  panel_not_found: 'Không tìm thấy tủ',
+  usb_action_not_implemented_use_panel_keypad:
+    'Chưa hỗ trợ bật/tắt bảo vệ qua CMS — dùng bàn phím trên tủ',
+}
+
+export function formatCommandError(code: string | null | undefined): string {
+  if (!code) return vi.failed
+  return commandErrorLabel[code] ?? code
 }
 
 export function labelOf(map: Record<string, string>, key: string | null | undefined, fallback?: string) {

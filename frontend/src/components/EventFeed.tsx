@@ -1,5 +1,5 @@
 import type { CmsEvent } from '../api/client'
-import { armedStateLabel, deviceStateLabel, eventTypeLabel, labelOf, vi } from '../i18n/vi'
+import { armedStateLabel, deviceStateLabel, eventTypeLabel, formatCommandError, labelOf, vi } from '../i18n/vi'
 
 type Props = {
   events: CmsEvent[]
@@ -36,7 +36,11 @@ function formatEventDetail(e: CmsEvent): string {
   if (e.device_id) parts.push(String(e.device_id))
   if (e.state) parts.push(labelOf(deviceStateLabel, String(e.state)))
   if (e.armed_state) parts.push(labelOf(armedStateLabel, String(e.armed_state)))
-  if (e.detail) parts.push(String(e.detail))
+  if (e.detail) {
+    const detail =
+      e.type === 'command_error' ? formatCommandError(String(e.detail)) : String(e.detail)
+    parts.push(detail)
+  }
   return parts.join(' · ')
 }
 

@@ -1,3 +1,15 @@
+# Jablotron Enterprise CMS — Docker Compose
+#
+# ► Linux + USB thật (OptiPlex / server — mặc định):
+#     docker compose up -d --build
+#     Cắm USB Link Jablotron; kiểm tra: lsusb | grep -i 16d6
+#
+# ► Backend chạy ngoài Docker (khi container không thấy USB):
+#     Terminal 1: ./scripts/start-backend-usb.sh
+#     Terminal 2: docker compose -f docker-compose.usb-host.yml up -d --build
+#
+# ► Demo không phần cứng: đổi CMS_USB_MOCK_MODE thành "true"
+
 services:
   backend:
     build:
@@ -15,10 +27,10 @@ services:
       CMS_DATABASE_URL: sqlite+aiosqlite:////app/data/cms.db
       CMS_HWID_CACHE_PATH: /app/data/hwid.cache
       CMS_CORS_ORIGINS: "http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173"
-    # Uncomment on Linux host when using real USB HID:
-    # devices:
-    #   - /dev/bus/usb
-    # privileged: true
+    # USB HID — bắt buộc trên Linux khi dùng tủ thật trong Docker
+    devices:
+      - /dev/bus/usb
+    privileged: true
     expose:
       - "8000"
 
@@ -31,4 +43,3 @@ services:
       - "8080:80"
     depends_on:
       - backend
-

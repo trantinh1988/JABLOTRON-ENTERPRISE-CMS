@@ -10,6 +10,7 @@ type Props = {
   panels: Panel[]
   devices: Device[]
   writeAllowed: boolean
+  mockMode: boolean | null
   events: Parameters<typeof EventFeed>[0]['events']
   loadError: string | null
   onRefresh: () => Promise<void>
@@ -19,6 +20,7 @@ export function DashboardPage({
   panels,
   devices,
   writeAllowed,
+  mockMode,
   events,
   loadError,
   onRefresh,
@@ -48,6 +50,7 @@ export function DashboardPage({
           <PanelControls
             panels={panels}
             writeAllowed={writeAllowed}
+            mockMode={mockMode}
             selected={selectedSafe}
             onToggle={(id) => {
               setSelected((prev) => {

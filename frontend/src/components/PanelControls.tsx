@@ -1,20 +1,27 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Lock, LockOpen, Shield } from 'lucide-react'
 import { groupAction, type GroupAction, type Panel } from '../api/client'
-import { actionLabel, armedStateLabel, connectionLabel, labelOf, vi } from '../i18n/vi'
+import { actionLabel, armedStateLabel, connectionLabel, formatCommandError, labelOf, vi } from '../i18n/vi'
 
 type Props = {
   panels: Panel[]
   writeAllowed: boolean
+  mockMode: boolean | null
   selected: Set<string>
   onToggle: (panelId: string) => void
   onSelectAll: () => void
   onRefresh: () => Promise<void>
 }
 
+function panelControllable(p: Panel, mockMode: boolean | null): boolean {
+  if (mockMode) return true
+  return p.connection === 'usb'
+}
+
 export function PanelControls({
   panels,
   writeAllowed,
+  mockMode,
   selected,
   onToggle,
   onSelectAll,
@@ -31,6 +38,14 @@ export function PanelControls({
       setError(vi.pickPanel)
       return
     }
+    const blocked = selectedIds.filter((id) => {
+      const p = panels.find((x) => x.panel_id === id)
+      return p && !panelControllable(p, mockMode)
+    })
+    if (blocked.length) {
+      setError(vi.panelNotControllable(blocked.join(', ')))
+      return
+    }
     setBusy(true)
     setError(null)
     setOkMsg(null)
@@ -40,10 +55,7 @@ export function PanelControls({
       if (failed.length) {
         setError(
           failed
-            .map(
-              (f) =>
-                `${f.panel_id}: ${f.error === 'panel_not_found' ? 'không tìm thấy tủ' : f.error ?? vi.failed}`,
-            )
+            .map((f) => `${f.panel_id}: ${formatCommandError(String(f.error ?? ''))}`)
             .join(', '),
         )
       } else {
@@ -56,6 +68,12 @@ export function PanelControls({
       setBusy(false)
     }
   }
+
+  const anySelectedControllable = selectedIds.some((id) => {
+    const p = panels.find((x) => x.panel_id === id)
+    return p && panelControllable(p, mockMode)
+  })
+  const actionsDisabled = !writeAllowed || busy || !anySelectedControllable
 
   return (
     <section className="panel-card p-4">
@@ -75,6 +93,16 @@ export function PanelControls({
 
       {!writeAllowed && (
         <p className="mb-3 rounded-md bg-warn/10 px-3 py-2 text-xs text-warn">{vi.readOnlyHint}</p>
+      )}
+
+      {!mockMode &&
+        selectedIds.some((id) => {
+          const p = panels.find((x) => x.panel_id === id)
+          return p && !panelControllable(p, mockMode)
+        }) && (
+        <p className="mb-3 rounded-md bg-warn/10 px-3 py-2 text-xs text-warn">
+          {vi.connectionHintDisconnected}
+        </p>
       )}
 
       <ul className="mb-4 max-h-52 space-y-2 overflow-auto pr-1">
@@ -108,21 +136,21 @@ export function PanelControls({
 
       <div className="flex flex-wrap gap-2">
         <ActionBtn
-          disabled={!writeAllowed || busy}
+          disabled={actionsDisabled}
           onClick={() => void run('arm')}
           icon={<Lock className="size-3.5" />}
           label={vi.arm}
           tone="danger"
         />
         <ActionBtn
-          disabled={!writeAllowed || busy}
+          disabled={actionsDisabled}
           onClick={() => void run('disarm')}
           icon={<LockOpen className="size-3.5" />}
           label={vi.disarm}
           tone="ok"
         />
         <ActionBtn
-          disabled={!writeAllowed || busy}
+          disabled={actionsDisabled}
           onClick={() => void run('partial')}
           icon={<Shield className="size-3.5" />}
           label={vi.partial}
