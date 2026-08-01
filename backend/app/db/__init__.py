@@ -1,4 +1,14 @@
-from app.db.models import Base, DeviceRecord, EventRecord, FloorMapRecord, LicenseRecord, PanelRecord
+from app.db.models import (
+    Base,
+    DeviceRecord,
+    EventRecord,
+    FloorMapRecord,
+    LicenseRecord,
+    PanelRecord,
+    PanelUserRecord,
+    PgRecord,
+    ZoneRecord,
+)
 
 __all__ = [
     "Base",
@@ -7,4 +17,7 @@ __all__ = [
     "FloorMapRecord",
     "LicenseRecord",
     "PanelRecord",
+    "PanelUserRecord",
+    "PgRecord",
+    "ZoneRecord",
 ]

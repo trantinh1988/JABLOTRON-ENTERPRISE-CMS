@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from app.iot_core.device_id import make_device_global_id, make_panel_id
 from app.iot_core.event_hub import EventHub, get_event_hub
+from app.iot_core import panel_store
 
 ActionName = Literal["arm", "disarm", "partial"]
 
@@ -35,6 +36,17 @@ class PanelBus:
         self._workers: dict[str, asyncio.Task[None]] = {}
         self._lock = asyncio.Lock()
         self._command_sender: Any = None  # set by UsbDeviceManager
+        self._persist = True
+
+    def _ensure_worker(self, panel_id: str) -> None:
+        if panel_id not in self._queues:
+            self._queues[panel_id] = asyncio.Queue()
+        if panel_id not in self._workers or self._workers[panel_id].done():
+            self._workers[panel_id] = asyncio.create_task(self._worker(panel_id))
+
+    async def _persist_panel(self, panel: PanelState) -> None:
+        if self._persist:
+            await panel_store.save_panel(panel)
 
     def set_command_sender(self, sender: Any) -> None:
         self._command_sender = sender
@@ -58,8 +70,7 @@ class PanelBus:
                     last_seen_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 )
                 self.panels[panel_id] = panel
-                self._queues[panel_id] = asyncio.Queue()
-                self._workers[panel_id] = asyncio.create_task(self._worker(panel_id))
+                self._ensure_worker(panel_id)
             else:
                 panel.connection = connection
                 if usb_path is not None:
@@ -67,6 +78,7 @@ class PanelBus:
                 if display_name:
                     panel.display_name = display_name
                 panel.last_seen_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            await self._persist_panel(panel)
             return panel
 
     async def upsert_device(
@@ -126,6 +138,8 @@ class PanelBus:
             if map_y is not None:
                 device["map_y"] = map_y
         self.panels[panel_id].devices[global_id] = device
+        if self._persist:
+            await panel_store.save_device(device)
         return device
 
     def get_device(self, global_id: str) -> dict[str, Any] | None:
@@ -160,6 +174,8 @@ class PanelBus:
             for panel in self.panels.values():
                 if global_id in panel.devices:
                     del panel.devices[global_id]
+                    if self._persist:
+                        await panel_store.delete_device_record(global_id)
                     return True
         return False
 
@@ -181,6 +197,8 @@ class PanelBus:
             self._queues.pop(panel_id, None)
             if worker is not None and not worker.done():
                 worker.cancel()
+            if self._persist:
+                await panel_store.delete_panel_record(panel_id)
             return True
 
     def _next_zone_id(self, panel_id: str) -> str:
@@ -252,6 +270,8 @@ class PanelBus:
             "armed_state": "disarmed",
         }
         panel.zones[zone_id] = zone
+        if self._persist:
+            await panel_store.save_zone(zone)
         return zone
 
     async def update_zone(self, panel_id: str, zone_id: str, **fields: Any) -> dict[str, Any] | None:
@@ -268,6 +288,8 @@ class PanelBus:
             zone["section_num"] = fields["section_num"]
         if "armed_state" in fields and fields["armed_state"] is not None:
             zone["armed_state"] = fields["armed_state"]
+        if self._persist:
+            await panel_store.save_zone(zone)
         return zone
 
     async def delete_zone(self, panel_id: str, zone_id: str) -> bool:
@@ -278,9 +300,15 @@ class PanelBus:
         for device in panel.devices.values():
             if device.get("zone_id") == zone_id:
                 device["zone_id"] = None
+                if self._persist:
+                    await panel_store.save_device(device)
         for pg in panel.pgs.values():
             if pg.get("zone_id") == zone_id:
                 pg["zone_id"] = None
+                if self._persist:
+                    await panel_store.save_pg(pg)
+        if self._persist:
+            await panel_store.delete_zone_record(zone_id)
         return True
 
     def list_users(self, panel_id: str) -> list[dict[str, Any]]:
@@ -308,6 +336,8 @@ class PanelBus:
             "permissions": permissions or [],
         }
         panel.users[user_id] = user
+        if self._persist:
+            await panel_store.save_user(user)
         return user
 
     async def update_user(self, panel_id: str, user_id: str, **fields: Any) -> dict[str, Any] | None:
@@ -321,6 +351,8 @@ class PanelBus:
             user["code_label"] = fields["code_label"].strip()
         if "permissions" in fields and fields["permissions"] is not None:
             user["permissions"] = fields["permissions"]
+        if self._persist:
+            await panel_store.save_user(user)
         return user
 
     async def delete_user(self, panel_id: str, user_id: str) -> bool:
@@ -328,6 +360,8 @@ class PanelBus:
         if not panel or user_id not in panel.users:
             return False
         del panel.users[user_id]
+        if self._persist:
+            await panel_store.delete_user_record(user_id)
         return True
 
     def list_pgs(self, panel_id: str) -> list[dict[str, Any]]:
@@ -363,6 +397,8 @@ class PanelBus:
             "state": "off",
         }
         panel.pgs[pg_id] = pg
+        if self._persist:
+            await panel_store.save_pg(pg)
         return pg
 
     async def update_pg(self, panel_id: str, pg_id: str, **fields: Any) -> dict[str, Any] | None:
@@ -386,6 +422,8 @@ class PanelBus:
             pg["mode"] = fields["mode"]
         if "state" in fields and fields["state"] is not None:
             pg["state"] = fields["state"]
+        if self._persist:
+            await panel_store.save_pg(pg)
         return pg
 
     async def delete_pg(self, panel_id: str, pg_id: str) -> bool:
@@ -393,6 +431,8 @@ class PanelBus:
         if not panel or pg_id not in panel.pgs:
             return False
         del panel.pgs[pg_id]
+        if self._persist:
+            await panel_store.delete_pg_record(pg_id)
         return True
 
     def list_all_devices(self) -> list[dict[str, Any]]:
@@ -450,6 +490,8 @@ class PanelBus:
                 if ok:
                     armed = {"arm": "armed", "disarm": "disarmed", "partial": "partial"}[action]
                     self.panels[panel_id].armed_state = armed
+                    if self._persist:
+                        await panel_store.save_panel(self.panels[panel_id])
                     await self.event_hub.publish(
                         {
                             "type": "panel_armed",

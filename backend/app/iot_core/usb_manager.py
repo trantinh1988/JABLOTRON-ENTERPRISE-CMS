@@ -18,6 +18,7 @@ from app.iot_core.jablotron_protocol import (
     strip_hid_report_id,
 )
 from app.iot_core.panel_bus import PanelBus, get_panel_bus
+from app.iot_core import panel_store
 
 try:
     import hid  # type: ignore
@@ -62,7 +63,8 @@ class UsbDeviceManager:
             return
         self._stop.clear()
         if self.settings.usb_mock_mode:
-            await self.panel_bus.seed_mock_panels()
+            if not self.panel_bus.panels:
+                await self.panel_bus.seed_mock_panels()
         self._task = asyncio.create_task(self._run(), name="usb-device-manager")
 
     async def stop(self) -> None:
@@ -156,6 +158,9 @@ class UsbDeviceManager:
                     panel = self.panel_bus.panels.get(panel_id)
                     if panel:
                         panel.connection = "disconnected"
+                        panel.usb_path = None
+                        if self.panel_bus._persist:
+                            await panel_store.save_panel(panel)
                         await self.event_hub.publish(
                             {"type": "panel_disconnected", "panel_id": panel_id}
                         )
@@ -241,6 +246,8 @@ class UsbDeviceManager:
 
         if updates.panel_armed and panel.armed_state != updates.panel_armed:
             panel.armed_state = updates.panel_armed
+            if self.panel_bus._persist:
+                await panel_store.save_panel(panel)
             await self.event_hub.publish(
                 {
                     "type": "panel_armed",
@@ -253,6 +260,8 @@ class UsbDeviceManager:
             for zone in panel.zones.values():
                 if zone.get("section_num") == section_num and zone.get("armed_state") != armed:
                     zone["armed_state"] = armed
+                    if self.panel_bus._persist:
+                        await panel_store.save_zone(zone)
 
         for device_num, state in updates.device_states.items():
             global_id = make_device_global_id(panel_id, device_num)

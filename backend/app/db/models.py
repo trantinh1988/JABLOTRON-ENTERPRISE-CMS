@@ -48,12 +48,48 @@ class DeviceRecord(Base):
     device_type: Mapped[str] = mapped_column(String(64), default="sensor")
     label: Mapped[str] = mapped_column(String(128), default="")
     state: Mapped[str] = mapped_column(String(32), default="ok")  # ok|open|alarm
+    zone_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     map_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     map_x: Mapped[float | None] = mapped_column(Float, nullable=True)
     map_y: Mapped[float | None] = mapped_column(Float, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class ZoneRecord(Base):
+    __tablename__ = "zones"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    zone_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    panel_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    section_num: Mapped[int] = mapped_column(Integer)
+    armed_state: Mapped[str] = mapped_column(String(32), default="disarmed")
+
+
+class PanelUserRecord(Base):
+    __tablename__ = "panel_users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    panel_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(128), default="")
+    code_label: Mapped[str] = mapped_column(String(128), default="")
+    permissions_json: Mapped[str] = mapped_column(Text, default="[]")
+
+
+class PgRecord(Base):
+    __tablename__ = "pg_outputs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pg_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    panel_id: Mapped[str] = mapped_column(String(64), index=True)
+    pg_num: Mapped[int] = mapped_column(Integer)
+    label: Mapped[str] = mapped_column(String(128), default="")
+    zone_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mode: Mapped[str] = mapped_column(String(32), default="pulse")
+    state: Mapped[str] = mapped_column(String(32), default="off")
 
 
 class EventRecord(Base):

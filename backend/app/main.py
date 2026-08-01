@@ -10,6 +10,8 @@ from app.api import events, license, maps, panels, ws
 from app.core.config import get_settings
 from app.db.session import init_db
 from app.iot_core.event_store import register_event_persistence
+from app.iot_core.panel_bus import get_panel_bus
+from app.iot_core.panel_store import load_panels_into_bus
 from app.iot_core.usb_manager import get_usb_manager
 from app.license_manager.service import get_license_service
 from app.schemas.common import HealthOut
@@ -21,6 +23,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     register_event_persistence()
     license_service = get_license_service()
     await license_service.load_from_db()
+    await load_panels_into_bus(get_panel_bus())
     usb = get_usb_manager()
     await usb.start()
     try:

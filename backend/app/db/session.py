@@ -15,6 +15,7 @@ async def _ensure_sqlite_columns() -> None:
     """Best-effort ALTER for existing SQLite DBs (create_all does not add columns)."""
     alters = [
         ("devices", "map_id", "INTEGER"),
+        ("devices", "zone_id", "VARCHAR(64)"),
     ]
     async with engine.begin() as conn:
         for table, column, coltype in alters:
