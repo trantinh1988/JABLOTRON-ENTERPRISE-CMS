@@ -1,7 +1,5 @@
-# Jablotron Link USB/HID — quyền truy cập không cần root
-# Cài: sudo cp scripts/99-jablotron-hid.rules /etc/udev/rules.d/
-#      sudo udevadm control --reload-rules && sudo udevadm trigger
-# Thêm user: sudo usermod -aG plugdev USER
+# Jablotron JA-100 / Link USB — quyền đọc HID cho user và Docker
+# Cài: sudo ./scripts/setup-usb-linux.sh
 
 SUBSYSTEM=="usb", ATTR{idVendor}=="16d6", ATTR{idProduct}=="0008", MODE="0666", GROUP="plugdev"
-SUBSYSTEM=="hidraw", ATTRS{idVendor}=="16d6", ATTRS{idProduct}=="0008", MODE="0666", GROUP="plugdev"
+KERNEL=="hidraw*", ATTRS{idVendor}=="16d6", ATTRS{idProduct}=="0008", MODE="0666", GROUP="plugdev"
