@@ -2,6 +2,8 @@
 # Backend Jablotron CMS — USB HID thật trên Linux (không Docker).
 # Chạy script này TRƯỚC, sau đó: docker compose -f docker-compose.usb-host.yml up -d
 
+# Lần đầu trên Ubuntu: sudo bash scripts/setup-deps-linux.sh
+
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,14 +19,9 @@ if [[ ! -f "$KEYS" ]]; then
   exit 1
 fi
 
-if [[ ! -d .venv ]]; then
-  echo "Tạo virtualenv..."
-  python3 -m venv .venv
-fi
-
 # shellcheck disable=SC1091
-source .venv/bin/activate
-pip install -r requirements.txt -q
+source "$ROOT/scripts/ensure-backend-venv.sh"
+ensure_backend_venv "$BACKEND"
 
 mkdir -p "$DATA_DIR"
 

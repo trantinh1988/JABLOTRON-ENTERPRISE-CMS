@@ -4,7 +4,8 @@
 #   - Frontend trong Docker (port 8080) — proxy tới host:8010
 #
 # Chạy: chmod +x scripts/*.sh && ./scripts/deploy-usb-linux.sh
-# Lần đầu: sudo ./scripts/setup-usb-linux.sh
+# Lần đầu Ubuntu: sudo bash scripts/setup-deps-linux.sh
+# USB udev:       sudo bash scripts/setup-usb-linux.sh
 
 set -euo pipefail
 
@@ -41,12 +42,9 @@ done
 echo ""
 echo "=== 3. Chuẩn bị backend native ==="
 cd "$BACKEND"
-if [[ ! -d .venv ]]; then
-  python3 -m venv .venv
-fi
 # shellcheck disable=SC1091
-source .venv/bin/activate
-pip install -r requirements.txt -q
+source "$ROOT/scripts/ensure-backend-venv.sh"
+ensure_backend_venv "$BACKEND"
 
 python3 - <<'PY' || { echo "hidapi không thấy Jablotron — cài: sudo apt install libhidapi-hidraw0"; exit 1; }
 import hid
