@@ -207,6 +207,7 @@ class UsbDeviceManager:
                     continue
                 continue
 
+            self._fix_hidraw_permissions()
             found_paths: set[str] = set()
             try:
                 scanned = self._enumerate_hid_devices()
@@ -256,6 +257,9 @@ class UsbDeviceManager:
                 if session.usb_path not in found_paths:
                     self._close_session(session)
                     self._sessions.pop(panel_id, None)
+                    stale_paths = [p for p, pid in self._path_to_panel.items() if pid == panel_id]
+                    for stale in stale_paths:
+                        del self._path_to_panel[stale]
                     panel = self.panel_bus.panels.get(panel_id)
                     if panel:
                         panel.connection = "disconnected"
@@ -271,6 +275,26 @@ class UsbDeviceManager:
             except asyncio.TimeoutError:
                 continue
 
+    def _fix_hidraw_permissions(self) -> None:
+        """Hot-plug hidraw nodes often get root-only perms; fix each scan."""
+        import glob
+
+        for path in glob.glob("/dev/hidraw*"):
+            try:
+                os.chmod(path, 0o666)
+            except OSError:
+                pass
+
+    def _clear_path_mappings(self, panel_id: str) -> None:
+        stale = [p for p, pid in self._path_to_panel.items() if pid == panel_id]
+        for path in stale:
+            del self._path_to_panel[path]
+
+    async def _notify_panel_connected(self, panel_id: str, path_str: str) -> None:
+        await self.event_hub.publish(
+            {"type": "panel_connected", "panel_id": panel_id, "usb_path": path_str}
+        )
+
     async def _ensure_panel_for_path(self, path_str: str, next_index: int) -> str:
         if path_str in self._path_to_panel:
             panel_id = self._path_to_panel[path_str]
@@ -285,6 +309,7 @@ class UsbDeviceManager:
         ]
         if len(waiting) == 1:
             panel_id = waiting[0]
+            self._clear_path_mappings(panel_id)
         else:
             panel_id = make_panel_id(next_index)
             await self.panel_bus.ensure_panel(
@@ -296,15 +321,13 @@ class UsbDeviceManager:
 
         self._path_to_panel[path_str] = panel_id
         await self.panel_bus.ensure_panel(panel_id, connection="usb", usb_path=path_str)
-        await self.event_hub.publish(
-            {"type": "panel_connected", "panel_id": panel_id, "usb_path": path_str}
-        )
         return panel_id
 
     async def _ensure_session(self, panel_id: str, path_str: str) -> None:
         existing = self._sessions.get(panel_id)
         if existing and existing.usb_path == path_str:
             return
+        needs_connected_event = existing is None or existing.usb_path != path_str
         if existing:
             self._close_session(existing)
         device = hid.device()
@@ -323,6 +346,8 @@ class UsbDeviceManager:
         session.last_enable_states_at = time.monotonic()
         await asyncio.sleep(0.2)
         await self._initial_sync(panel_id)
+        if needs_connected_event:
+            await self._notify_panel_connected(panel_id, path_str)
 
     async def sync_panel(self, panel_id: str) -> dict[str, Any]:
         """Đọc HID và đẩy trạng thái thiết bị đã khai báo lên UI."""
