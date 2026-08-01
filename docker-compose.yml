@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./keys:/keys:ro
-      - cms-data:/app/data
+      - ./backend/data:/app/data
     environment:
       CMS_USB_MOCK_MODE: "false"
       CMS_JABLOTRON_VENDOR_ID: "58518"
@@ -32,5 +32,3 @@ services:
     depends_on:
       - backend
 
-volumes:
-  cms-data:

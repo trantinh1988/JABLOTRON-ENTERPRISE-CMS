@@ -81,9 +81,8 @@ class UsbDeviceManager:
             return None
         if os.path.exists("/.dockerenv"):
             return (
-                "Backend đang chạy trong Docker và không thấy thiết bị USB Jablotron. "
-                "Trên Windows: chạy backend trực tiếp trên PC (không dùng Docker), "
-                "hoặc đặt CMS_USB_MOCK_MODE=true để demo."
+                "Backend đang chạy trong Docker — không thấy USB. "
+                "Chạy: .\\scripts\\start-backend-usb.ps1 rồi docker compose -f docker-compose.usb-host.yml up -d"
             )
         return (
             "Không phát hiện Jablotron Link (VID 16D6 / PID 0008). "
