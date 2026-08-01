@@ -41,6 +41,8 @@ import {
   pgStateLabel,
   vi,
 } from '../i18n/vi'
+import type { CmsEvent } from '../api/client'
+import { applyDeviceEvent } from '../hooks/deviceEventSync'
 
 const TABS = ['overview', 'zones', 'users', 'inputs', 'pg', 'connection'] as const
 type Tab = (typeof TABS)[number]
@@ -61,9 +63,10 @@ const PG_MODES = Object.keys(pgModeLabel)
 type Props = {
   writeAllowed: boolean
   onRefresh: () => Promise<void>
+  lastEvent: CmsEvent | null
 }
 
-export function PanelSetupPage({ writeAllowed, onRefresh }: Props) {
+export function PanelSetupPage({ writeAllowed, onRefresh, lastEvent }: Props) {
   const { panelId = '' } = useParams()
   const [tab, setTab] = useState<Tab>('overview')
   const [panel, setPanel] = useState<Panel | null>(null)
@@ -102,6 +105,50 @@ export function PanelSetupPage({ writeAllowed, onRefresh }: Props) {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (!lastEvent || !panelId) return
+
+    if (lastEvent.type === 'device_state' || lastEvent.type === 'devices_state_batch') {
+      setDevices((prev) => {
+        const patched = applyDeviceEvent(prev, lastEvent)
+        if (patched === 'refresh') {
+          void load()
+          return prev
+        }
+        return patched
+      })
+    }
+
+    if (lastEvent.type === 'panel_armed' && lastEvent.panel_id === panelId && lastEvent.armed_state) {
+      setPanel((p) => (p ? { ...p, armed_state: String(lastEvent.armed_state) } : p))
+    }
+
+    if (
+      (lastEvent.type === 'panel_connected' || lastEvent.type === 'panel_disconnected') &&
+      lastEvent.panel_id === panelId
+    ) {
+      void load()
+    }
+
+    if (lastEvent.type === 'zone_armed' && lastEvent.panel_id === panelId && lastEvent.zone_id) {
+      setZones((prev) =>
+        prev.map((z) =>
+          z.zone_id === lastEvent.zone_id
+            ? { ...z, armed_state: String(lastEvent.armed_state ?? z.armed_state) }
+            : z,
+        ),
+      )
+    }
+
+    if (lastEvent.type === 'pg_state' && lastEvent.panel_id === panelId && lastEvent.pg_id) {
+      setPgs((prev) =>
+        prev.map((p) =>
+          p.pg_id === lastEvent.pg_id ? { ...p, state: String(lastEvent.state ?? p.state) } : p,
+        ),
+      )
+    }
+  }, [lastEvent, panelId, load])
 
   async function reload() {
     await load()

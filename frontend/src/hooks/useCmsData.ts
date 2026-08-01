@@ -11,6 +11,7 @@ import {
   type Panel,
 } from '../api/client'
 import { useEventStream } from './useEventStream'
+import { applyDeviceEvent, shouldRefreshOnEvent } from './deviceEventSync'
 
 export function useCmsData() {
   const [license, setLicense] = useState<LicenseStatus | null>(null)
@@ -51,12 +52,15 @@ export function useCmsData() {
   useEffect(() => {
     if (!lastEvent) return
 
-    if (lastEvent.type === 'device_state' && lastEvent.device_id && lastEvent.state) {
-      setDevices((prev) =>
-        prev.map((d) =>
-          d.global_id === lastEvent.device_id ? { ...d, state: String(lastEvent.state) } : d,
-        ),
-      )
+    if (lastEvent.type === 'device_state' || lastEvent.type === 'devices_state_batch') {
+      setDevices((prev) => {
+        const patched = applyDeviceEvent(prev, lastEvent)
+        if (patched === 'refresh') {
+          void refresh()
+          return prev
+        }
+        return patched
+      })
     }
 
     if (lastEvent.type === 'panel_armed' && lastEvent.panel_id && lastEvent.armed_state) {
@@ -70,10 +74,31 @@ export function useCmsData() {
     }
 
     if (
-      lastEvent.type === 'device_declared' ||
-      lastEvent.type === 'device_updated' ||
-      lastEvent.type === 'device_deleted'
+      lastEvent.type === 'panel_connected' &&
+      lastEvent.panel_id &&
+      typeof lastEvent.usb_path === 'string'
     ) {
+      setPanels((prev) =>
+        prev.map((p) =>
+          p.panel_id === lastEvent.panel_id
+            ? { ...p, connection: 'usb', usb_path: String(lastEvent.usb_path) }
+            : p,
+        ),
+      )
+      void refresh()
+    }
+
+    if (lastEvent.type === 'panel_disconnected' && lastEvent.panel_id) {
+      setPanels((prev) =>
+        prev.map((p) =>
+          p.panel_id === lastEvent.panel_id
+            ? { ...p, connection: 'disconnected', usb_path: null }
+            : p,
+        ),
+      )
+    }
+
+    if (shouldRefreshOnEvent(lastEvent)) {
       void refresh()
     }
   }, [lastEvent, refresh])

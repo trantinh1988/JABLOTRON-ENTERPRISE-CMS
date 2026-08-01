@@ -51,7 +51,11 @@ export default function App() {
           <Route
             path="panels/:panelId"
             element={
-              <PanelSetupPage writeAllowed={data.writeAllowed} onRefresh={data.refresh} />
+              <PanelSetupPage
+                writeAllowed={data.writeAllowed}
+                onRefresh={data.refresh}
+                lastEvent={data.lastEvent}
+              />
             }
           />
           <Route

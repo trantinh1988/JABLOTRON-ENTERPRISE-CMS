@@ -422,6 +422,17 @@ class PanelBus:
             pg["mode"] = fields["mode"]
         if "state" in fields and fields["state"] is not None:
             pg["state"] = fields["state"]
+            if self._persist:
+                await panel_store.save_pg(pg)
+            await self.event_hub.publish(
+                {
+                    "type": "pg_state",
+                    "panel_id": panel_id,
+                    "pg_id": pg_id,
+                    "state": pg["state"],
+                }
+            )
+            return pg
         if self._persist:
             await panel_store.save_pg(pg)
         return pg
@@ -457,14 +468,34 @@ class PanelBus:
         return cleared
 
     async def set_device_state(self, panel_id: str, device_num: int, state: str) -> dict[str, Any]:
+        global_id = make_device_global_id(panel_id, device_num)
+        panel = self.panels.get(panel_id)
+        if panel is not None and global_id in panel.devices:
+            device = panel.devices[global_id]
+            if device.get("state") == state:
+                return device
+            device["state"] = state
+            await self.event_hub.publish(
+                {
+                    "type": "device_state",
+                    "panel_id": panel_id,
+                    "device_id": global_id,
+                    "state": state,
+                }
+            )
+            if self._persist:
+                asyncio.create_task(panel_store.save_device(device))
+            return device
+
         device = await self.upsert_device(panel_id, device_num, state=state)
-        event = {
-            "type": "device_state",
-            "panel_id": panel_id,
-            "device_id": device["global_id"],
-            "state": state,
-        }
-        await self.event_hub.publish(event)
+        await self.event_hub.publish(
+            {
+                "type": "device_state",
+                "panel_id": panel_id,
+                "device_id": device["global_id"],
+                "state": state,
+            }
+        )
         return device
 
     async def group_action(self, panel_ids: list[str], action: ActionName) -> dict[str, Any]:

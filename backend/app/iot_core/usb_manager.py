@@ -262,18 +262,59 @@ class UsbDeviceManager:
                     zone["armed_state"] = armed
                     if self.panel_bus._persist:
                         await panel_store.save_zone(zone)
+                    await self.event_hub.publish(
+                        {
+                            "type": "zone_armed",
+                            "panel_id": panel_id,
+                            "zone_id": zone["zone_id"],
+                            "armed_state": armed,
+                        }
+                    )
 
-        for device_num, state in updates.device_states.items():
-            global_id = make_device_global_id(panel_id, device_num)
-            if global_id in panel.devices:
-                current = panel.devices[global_id].get("state")
-                if current != state:
-                    await self.panel_bus.set_device_state(panel_id, device_num, state)
+        if updates.device_states:
+            await self._apply_device_states(panel_id, updates.device_states)
 
         for pg_num, pg_state in updates.pg_states.items():
             for pg in panel.pgs.values():
                 if pg.get("pg_num") == pg_num and pg.get("state") != pg_state:
                     await self.panel_bus.update_pg(panel_id, pg["pg_id"], state=pg_state)
+
+    async def _apply_device_states(self, panel_id: str, device_states: dict[int, str]) -> None:
+        panel = self.panel_bus.panels.get(panel_id)
+        if not panel:
+            return
+
+        updates: dict[str, str] = {}
+        for device_num, state in device_states.items():
+            global_id = make_device_global_id(panel_id, device_num)
+            if global_id not in panel.devices:
+                continue
+            device = panel.devices[global_id]
+            if device.get("state") == state:
+                continue
+            device["state"] = state
+            updates[global_id] = state
+            if self.panel_bus._persist:
+                asyncio.create_task(panel_store.save_device(device))
+
+        if len(updates) == 1:
+            global_id, state = next(iter(updates.items()))
+            await self.event_hub.publish(
+                {
+                    "type": "device_state",
+                    "panel_id": panel_id,
+                    "device_id": global_id,
+                    "state": state,
+                }
+            )
+        elif updates:
+            await self.event_hub.publish(
+                {
+                    "type": "devices_state_batch",
+                    "panel_id": panel_id,
+                    "updates": updates,
+                }
+            )
 
     def _hid_write(self, session: _HidSession, packet: bytes) -> None:
         padded = pad_hid_packet(packet)
