@@ -122,7 +122,8 @@ class UsbDeviceManager:
         if os.path.exists("/.dockerenv"):
             return (
                 "Backend đang chạy trong Docker — không thấy USB. "
-                "Linux: ./scripts/start-backend-usb.sh rồi docker compose -f docker-compose.usb-host.yml up -d. "
+                "Linux: bash scripts/stop-cms.sh && bash scripts/deploy-usb-linux.sh "
+                "(backend native port 8010, không dùng docker compose up). "
                 "Windows: .\\scripts\\start-backend-usb.ps1"
             )
         return (

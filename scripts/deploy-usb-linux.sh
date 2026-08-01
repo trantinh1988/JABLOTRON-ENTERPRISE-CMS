@@ -23,11 +23,23 @@ if [[ ! -f "$KEYS" ]]; then
   exit 1
 fi
 
-echo "=== 1. Dừng stack Docker đầy đủ (backend trong container không thấy USB) ==="
-docker compose down 2>/dev/null || true
+CMS_BACKEND_PORT="${CMS_BACKEND_PORT:-8010}"
+
+echo "=== 1. Dừng Docker backend (container không dùng được USB HID) ==="
+bash "$ROOT/scripts/stop-cms.sh"
 
 echo ""
-echo "=== 2. Chuẩn bị backend native ==="
+echo "=== 2. Kiểm tra HID trên host ==="
+if ! lsusb | grep -qi 16d6; then
+  echo "Cắm USB Link Jablotron rồi chạy lại."
+  exit 1
+fi
+for f in /dev/hidraw*; do
+  [[ -e "$f" ]] && chmod 666 "$f" 2>/dev/null || true
+done
+
+echo ""
+echo "=== 3. Chuẩn bị backend native ==="
 cd "$BACKEND"
 if [[ ! -d .venv ]]; then
   python3 -m venv .venv
@@ -36,10 +48,19 @@ fi
 source .venv/bin/activate
 pip install -r requirements.txt -q
 
-CMS_BACKEND_PORT="${CMS_BACKEND_PORT:-8010}"
+python3 - <<'PY' || { echo "hidapi không thấy Jablotron — cài: sudo apt install libhidapi-hidraw0"; exit 1; }
+import hid
+n = len(hid.enumerate(0x16D6, 0x0008))
+print(f"hid.enumerate(16D6,0008) → {n} thiết bị")
+if n == 0:
+    all16 = [d for d in hid.enumerate(0, 0) if d.get("vendor_id") == 0x16D6]
+    print(f"fallback enumerate → {len(all16)} thiết bị")
+    if not all16:
+        raise SystemExit(1)
+PY
 
 echo ""
-echo "=== 3. Dừng backend cũ (nếu có) ==="
+echo "=== 4. Dừng backend cũ (nếu có) ==="
 if [[ -f "$PID_FILE" ]]; then
   old_pid="$(cat "$PID_FILE" 2>/dev/null || true)"
   if [[ -n "${old_pid:-}" ]] && kill -0 "$old_pid" 2>/dev/null; then
@@ -61,24 +82,30 @@ export CMS_HWID_CACHE_PATH="$DATA_DIR/hwid.cache"
 export CMS_CORS_ORIGINS="http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173"
 
 echo ""
-echo "=== 4. Khởi động backend USB (nền, port ${CMS_BACKEND_PORT}) ==="
+echo "=== 5. Khởi động backend USB (nền, port ${CMS_BACKEND_PORT}) ==="
 nohup uvicorn app.main:app --host 0.0.0.0 --port "$CMS_BACKEND_PORT" >>"$LOG_DIR/backend.log" 2>&1 &
 echo $! >"$PID_FILE"
 sleep 2
 
-if ! curl -sf "http://127.0.0.1:${CMS_BACKEND_PORT}/api/health" >/dev/null; then
-  echo "Backend chưa sẵn sàng trên :${CMS_BACKEND_PORT} — xem log: tail -f $LOG_DIR/backend.log"
-  echo "Port 8000 có thể bị aaPanel chiếm — backend CMS dùng :${CMS_BACKEND_PORT}"
+if ! curl -sf "http://127.0.0.1:${CMS_BACKEND_PORT}/api/health" | grep -q '"status":"ok"'; then
+  echo "Backend chưa sẵn sàng trên :${CMS_BACKEND_PORT} — xem log:"
+  tail -20 "$LOG_DIR/backend.log" 2>/dev/null || true
+  exit 1
+fi
+
+USB_JSON="$(curl -sf "http://127.0.0.1:${CMS_BACKEND_PORT}/api/usb/status")"
+if echo "$USB_JSON" | grep -q 'Backend đang chạy trong Docker'; then
+  echo "Lỗi: :${CMS_BACKEND_PORT} vẫn trỏ vào Docker — chạy: bash scripts/stop-cms.sh"
   exit 1
 fi
 
 echo ""
-echo "=== 5. Khởi động UI Docker (proxy → host:${CMS_BACKEND_PORT}) ==="
+echo "=== 6. Khởi động UI Docker (proxy → host:${CMS_BACKEND_PORT}) ==="
 cd "$ROOT"
 docker compose -f docker-compose.usb-host.yml up -d --build
 
 echo ""
-echo "=== 6. Kiểm tra USB ==="
+echo "=== 7. Kiểm tra USB ==="
 bash "$ROOT/scripts/check-usb-linux.sh"
 
 echo ""
