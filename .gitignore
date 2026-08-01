@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Runtime data
+backend/data/*.db
+backend/data/*.db-*
+backend/data/hwid.cache
+backend/data/license.json
+*.req
+*.lic
+
+# Keys — never commit private key
+keys/private_key.pem
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Frontend (later)
+node_modules/
+dist/

@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --color-ink: #e8eef4;
+  --color-steel: #9db0c2;
+  --color-slate-panel: #15202b;
+  --color-mist: #1a2734;
+  --color-fog: #121a24;
+  --color-accent: #2dd4a8;
+  --color-accent-dim: #1a9f7e;
+  --color-warn: #e3a227;
+  --color-danger: #ef5350;
+  --color-ok: #3dcb7a;
+  --color-line: #2a3a4c;
+  --color-panel: #0f161f;
+  --color-surface: #141c27;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background:
+      radial-gradient(1000px 500px at 8% -8%, rgba(45, 212, 168, 0.08), transparent 55%),
+      radial-gradient(800px 420px at 100% 0%, rgba(239, 83, 80, 0.05), transparent 48%),
+      linear-gradient(180deg, #0b1017 0%, #0e141c 100%);
+    background-attachment: fixed;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  input,
+  select,
+  textarea {
+    color-scheme: dark;
+  }
+}
+
+@layer utilities {
+  .map-grid {
+    background-image:
+      linear-gradient(rgba(157, 176, 194, 0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(157, 176, 194, 0.07) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .panel-card {
+    border-radius: 0.75rem;
+    border: 1px solid var(--color-line);
+    background: color-mix(in srgb, var(--color-surface) 92%, transparent);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02);
+  }
+}
