@@ -107,9 +107,9 @@ if echo "$USB_JSON" | grep -q 'Backend đang chạy trong Docker'; then
 fi
 
 echo ""
-echo "=== 6. Khởi động UI Docker (proxy → host:${CMS_BACKEND_PORT}) ==="
+echo "=== 6. Khởi động UI Docker (proxy → 127.0.0.1:${CMS_BACKEND_PORT}) ==="
 cd "$ROOT"
-docker compose -f docker-compose.usb-host.yml up -d --build
+docker compose -f docker-compose.usb-host.linux.yml up -d --build
 
 echo ""
 echo "=== 7. Kiểm tra USB ==="
@@ -120,4 +120,4 @@ echo "Xong."
 echo "  UI:      http://127.0.0.1:8080"
 echo "  API:     http://127.0.0.1:${CMS_BACKEND_PORT}/api/usb/status"
 echo "  Log:     tail -f $LOG_DIR/backend.log"
-echo "  Dừng:    kill \$(cat $PID_FILE); docker compose -f docker-compose.usb-host.yml down"
+echo "  Dừng:    kill \$(cat $PID_FILE); docker compose -f docker-compose.usb-host.linux.yml down"

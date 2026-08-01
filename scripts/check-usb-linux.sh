@@ -38,7 +38,7 @@ fi
 
 echo ""
 echo "=== 4. API (native :8010) ==="
-NATIVE="$(curl -sf http://127.0.0.1:8010/api/usb/status 2>/dev/null || true)"
+NATIVE="$(curl -sf --max-time 5 http://127.0.0.1:8010/api/usb/status 2>/dev/null || true)"
 if [[ -n "$NATIVE" ]]; then
   echo "$NATIVE" | python3 -m json.tool 2>/dev/null || echo "$NATIVE"
 else
@@ -47,11 +47,11 @@ fi
 
 echo ""
 echo "=== 5. API (UI :8080) ==="
-UI="$(curl -sf http://127.0.0.1:8080/api/usb/status 2>/dev/null || true)"
+UI="$(curl -sf --max-time 5 http://127.0.0.1:8080/api/usb/status 2>/dev/null || true)"
 if [[ -n "$UI" ]]; then
   echo "$UI" | python3 -m json.tool 2>/dev/null || echo "$UI"
 else
-  echo "  (UI chưa chạy hoặc chưa proxy tới :8010)"
+  echo "  (UI chưa chạy hoặc proxy lỗi — chạy lại: bash scripts/deploy-usb-linux.sh)"
 fi
 
 echo ""

@@ -117,7 +117,12 @@ class UsbDeviceManager:
             return None
         if not self._hid_available:
             return "Chưa cài hidapi. Cài: pip install hidapi"
-        if self._devices_found > 0:
+        if self._sessions or self._devices_found > 0:
+            return None
+        if self._scanned_devices:
+            return None
+        connected = sum(1 for p in self.panel_bus.panels.values() if p.connection == "usb")
+        if connected > 0:
             return None
         if os.path.exists("/.dockerenv"):
             return (
@@ -229,7 +234,10 @@ class UsbDeviceManager:
                         msg = f"Không mở được USB {path_str}: {exc}"
                         self._set_usb_error(msg)
                         await self.event_hub.publish({"type": "usb_error", "detail": msg})
-                self._devices_found = len(found_paths)
+                # HID đang mở thì enumerate() thường trả rỗng — giữ session, không ngắt nhầm
+                for session in self._sessions.values():
+                    found_paths.add(session.usb_path)
+                self._devices_found = max(len(found_paths), len(self._sessions), len(scanned))
                 if found_paths and not self._sessions:
                     self._set_usb_error(
                         "Thấy thiết bị USB nhưng không mở được HID — kiểm tra quyền (plugdev/udev) "
