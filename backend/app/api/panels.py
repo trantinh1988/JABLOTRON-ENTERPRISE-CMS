@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Response
 
 from app.core.deps import RequireWriteLicense
+from app.core.config import get_settings
 from app.iot_core.panel_bus import get_panel_bus
 from app.iot_core.device_id import make_panel_id
 from app.schemas.common import (
@@ -92,7 +93,8 @@ async def create_panel(body: PanelCreateIn, _: RequireWriteLicense) -> PanelOut:
         raise HTTPException(status_code=409, detail=f"Tủ đã tồn tại: {panel_id}")
 
     display = body.display_name.strip() or f"Tủ Jablotron {panel_id.removeprefix('PANEL_')}"
-    panel = await bus.ensure_panel(panel_id, display_name=display, connection="disconnected")
+    default_conn = "mock" if get_settings().usb_mock_mode else "disconnected"
+    panel = await bus.ensure_panel(panel_id, display_name=display, connection=default_conn)
     await bus.event_hub.publish(
         {
             "type": "panel_declared",

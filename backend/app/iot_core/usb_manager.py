@@ -80,7 +80,7 @@ class UsbDeviceManager:
         if panel is None:
             return False, "panel_not_found"
 
-        if self.settings.usb_mock_mode or panel.connection == "mock":
+        if self.settings.usb_mock_mode:
             await asyncio.sleep(0.05)
             return True, f"mock_action:{action}"
 

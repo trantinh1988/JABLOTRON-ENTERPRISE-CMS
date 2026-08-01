@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+from app.core.config import get_settings
 from app.iot_core.device_id import make_device_global_id, make_panel_id
 from app.iot_core.event_hub import EventHub, get_event_hub
 from app.iot_core import panel_store
@@ -51,13 +52,18 @@ class PanelBus:
     def set_command_sender(self, sender: Any) -> None:
         self._command_sender = sender
 
+    @staticmethod
+    def default_connection() -> str:
+        return "mock" if get_settings().usb_mock_mode else "disconnected"
+
     async def ensure_panel(
         self,
         panel_id: str,
         *,
         display_name: str | None = None,
-        connection: str = "mock",
+        connection: str | None = None,
         usb_path: str | None = None,
+        update_usb_path: bool = False,
     ) -> PanelState:
         async with self._lock:
             panel = self.panels.get(panel_id)
@@ -65,15 +71,16 @@ class PanelBus:
                 panel = PanelState(
                     panel_id=panel_id,
                     display_name=display_name or panel_id,
-                    connection=connection,
+                    connection=connection if connection is not None else self.default_connection(),
                     usb_path=usb_path,
                     last_seen_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                 )
                 self.panels[panel_id] = panel
                 self._ensure_worker(panel_id)
             else:
-                panel.connection = connection
-                if usb_path is not None:
+                if connection is not None:
+                    panel.connection = connection
+                if update_usb_path or usb_path is not None:
                     panel.usb_path = usb_path
                 if display_name:
                     panel.display_name = display_name

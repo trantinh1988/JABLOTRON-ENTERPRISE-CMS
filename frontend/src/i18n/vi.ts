@@ -128,9 +128,9 @@ export const vi = {
   connectionStatus: 'Trạng thái kết nối',
   usbPath: 'Đường dẫn USB',
   lastSeen: 'Lần cuối online',
-  connectionHintMock: 'Tủ đang ở chế độ mô phỏng — dữ liệu cấu hình do CMS quản lý thủ công.',
-  connectionHintUsb: 'Tủ kết nối qua USB HID. Trạng thái kết nối được cập nhật tự động.',
-  connectionHintDisconnected: 'Tủ chưa kết nối. Có thể khai báo cấu hình trước khi cắm USB.',
+  connectionHintMock: 'Tủ đang chạy ở chế độ mô phỏng (CMS_USB_MOCK_MODE=true). Trạng thái cảm biến được sinh ngẫu nhiên.',
+  connectionHintUsb: 'Tủ đã kết nối qua USB HID. Trạng thái cập nhật tự động từ tủ thật.',
+  connectionHintDisconnected: 'Tủ chưa kết nối USB. Cắm cáp Link Jablotron hoặc bật chế độ mô phỏng để thử nghiệm.',
   summaryZones: 'Số vùng',
   summaryUsers: 'Số user',
   summaryInputs: 'Số địa chỉ',
@@ -193,9 +193,9 @@ export const armedStateLabel: Record<string, string> = {
 }
 
 export const connectionLabel: Record<string, string> = {
-  mock: 'mô phỏng',
-  usb: 'USB',
-  disconnected: 'ngắt kết nối',
+  mock: 'Mô phỏng',
+  usb: 'USB đã kết nối',
+  disconnected: 'Chưa kết nối',
 }
 
 export const deviceStateLabel: Record<string, string> = {

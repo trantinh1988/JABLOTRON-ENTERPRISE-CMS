@@ -30,9 +30,20 @@ def _format_last_seen(value: datetime | None) -> str | None:
     return value.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def startup_connection(usb_mock_mode: bool) -> tuple[str, str | None]:
+    """Connection state after process restart (USB sessions do not survive)."""
+    if usb_mock_mode:
+        return "mock", None
+    return "disconnected", None
+
+
 async def load_panels_into_bus(bus: Any) -> None:
     """Restore declared panels and config from DB into in-memory PanelBus."""
+    from app.core.config import get_settings
     from app.iot_core.panel_bus import PanelState
+
+    settings = get_settings()
+    boot_connection, boot_usb_path = startup_connection(settings.usb_mock_mode)
 
     bus._persist = False  # type: ignore[attr-defined]
     try:
@@ -44,17 +55,11 @@ async def load_panels_into_bus(bus: Any) -> None:
                 return
 
             for row in panel_rows:
-                connection = row.connection
-                usb_path = row.usb_path
-                if connection == "usb":
-                    connection = "disconnected"
-                    usb_path = None
-
                 panel = PanelState(
                     panel_id=row.panel_id,
                     display_name=row.display_name or row.panel_id,
-                    connection=connection,
-                    usb_path=usb_path,
+                    connection=boot_connection,
+                    usb_path=boot_usb_path,
                     armed_state=row.armed_state or "disarmed",
                     last_seen_at=_format_last_seen(row.last_seen_at),
                 )
@@ -131,6 +136,8 @@ async def load_panels_into_bus(bus: Any) -> None:
                 }
     finally:
         bus._persist = True  # type: ignore[attr-defined]
+        for panel in bus.panels.values():
+            await save_panel(panel)
 
 
 async def save_panel(panel: Any) -> None:
