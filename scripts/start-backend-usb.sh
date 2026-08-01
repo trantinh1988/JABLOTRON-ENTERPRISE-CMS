@@ -13,6 +13,8 @@ KEYS="$ROOT/keys/public_key.pem"
 
 cd "$BACKEND"
 
+bash "$ROOT/scripts/fix-data-perms.sh"
+
 if [[ ! -f "$KEYS" ]]; then
   echo "Chưa có keys/public_key.pem. Chạy từ thư mục gốc:"
   echo "  python admin_tool_keygen.py gen-keys --out-dir keys"

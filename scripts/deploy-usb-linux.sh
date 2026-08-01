@@ -41,6 +41,7 @@ done
 
 echo ""
 echo "=== 3. Chuẩn bị backend native ==="
+bash "$ROOT/scripts/fix-data-perms.sh"
 cd "$BACKEND"
 # shellcheck disable=SC1091
 source "$ROOT/scripts/ensure-backend-venv.sh"
@@ -81,13 +82,21 @@ export CMS_CORS_ORIGINS="http://localhost:8080,http://127.0.0.1:8080,http://loca
 
 echo ""
 echo "=== 5. Khởi động backend USB (nền, port ${CMS_BACKEND_PORT}) ==="
+cd "$BACKEND"
+# shellcheck disable=SC1091
+source .venv/bin/activate
 nohup uvicorn app.main:app --host 0.0.0.0 --port "$CMS_BACKEND_PORT" >>"$LOG_DIR/backend.log" 2>&1 &
 echo $! >"$PID_FILE"
 sleep 2
 
 if ! curl -sf "http://127.0.0.1:${CMS_BACKEND_PORT}/api/health" | grep -q '"status":"ok"'; then
   echo "Backend chưa sẵn sàng trên :${CMS_BACKEND_PORT} — xem log:"
-  tail -20 "$LOG_DIR/backend.log" 2>/dev/null || true
+  tail -30 "$LOG_DIR/backend.log" 2>/dev/null || true
+  if grep -q "readonly database" "$LOG_DIR/backend.log" 2>/dev/null; then
+    echo ""
+    echo "Lỗi quyền SQLite — chạy: bash scripts/fix-data-perms.sh"
+    echo "  (Docker tạo cms.db với user root, backend native cần quyền ghi)"
+  fi
   exit 1
 fi
 
