@@ -25,7 +25,7 @@ Environment=CMS_PUBLIC_KEY_PATH=/www/wwwroot/Jablotron/JABLOTRON-ENTERPRISE-CMS/
 Environment=CMS_DATABASE_URL=sqlite+aiosqlite:////www/wwwroot/Jablotron/JABLOTRON-ENTERPRISE-CMS/backend/data/cms.db
 Environment=CMS_HWID_CACHE_PATH=/www/wwwroot/Jablotron/JABLOTRON-ENTERPRISE-CMS/backend/data/hwid.cache
 Environment=CMS_CORS_ORIGINS=http://localhost:8080,http://127.0.0.1:8080
-ExecStart=/www/wwwroot/Jablotron/JABLOTRON-ENTERPRISE-CMS/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+ExecStart=/www/wwwroot/Jablotron/JABLOTRON-ENTERPRISE-CMS/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8010
 Restart=on-failure
 RestartSec=5
 

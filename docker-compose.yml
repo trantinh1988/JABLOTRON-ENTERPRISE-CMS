@@ -2,7 +2,7 @@
 #
 # ► Linux + USB thật (OptiPlex / server — KHUYẾN NGHỊ):
 #     bash scripts/deploy-usb-linux.sh
-#     (Backend native port 8000 + UI Docker port 8080 — HID không hoạt động trong container)
+#     (Backend native port 8010 + UI Docker port 8080 — port 8000 thường bị aaPanel chiếm)
 #
 # ► Chỉ UI (backend đã chạy native):
 #     docker compose -f docker-compose.usb-host.yml up -d --build

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Triển khai CMS với USB thật trên Linux:
-#   - Backend native trên host (port 8000) — HID hoạt động
-#   - Frontend trong Docker (port 8080) — proxy tới host:8000
+#   - Backend native trên host (port 8010) — HID hoạt động
+#   - Frontend trong Docker (port 8080) — proxy tới host:8010
 #
 # Chạy: chmod +x scripts/*.sh && ./scripts/deploy-usb-linux.sh
 # Lần đầu: sudo ./scripts/setup-usb-linux.sh
@@ -36,6 +36,8 @@ fi
 source .venv/bin/activate
 pip install -r requirements.txt -q
 
+CMS_BACKEND_PORT="${CMS_BACKEND_PORT:-8010}"
+
 echo ""
 echo "=== 3. Dừng backend cũ (nếu có) ==="
 if [[ -f "$PID_FILE" ]]; then
@@ -46,6 +48,7 @@ if [[ -f "$PID_FILE" ]]; then
   fi
   rm -f "$PID_FILE"
 fi
+pkill -f "uvicorn app.main:app --host 0.0.0.0 --port ${CMS_BACKEND_PORT}" 2>/dev/null || true
 pkill -f "uvicorn app.main:app --host 0.0.0.0 --port 8000" 2>/dev/null || true
 sleep 1
 
@@ -58,18 +61,19 @@ export CMS_HWID_CACHE_PATH="$DATA_DIR/hwid.cache"
 export CMS_CORS_ORIGINS="http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173"
 
 echo ""
-echo "=== 4. Khởi động backend USB (nền) ==="
-nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 >>"$LOG_DIR/backend.log" 2>&1 &
+echo "=== 4. Khởi động backend USB (nền, port ${CMS_BACKEND_PORT}) ==="
+nohup uvicorn app.main:app --host 0.0.0.0 --port "$CMS_BACKEND_PORT" >>"$LOG_DIR/backend.log" 2>&1 &
 echo $! >"$PID_FILE"
 sleep 2
 
-if ! curl -sf http://127.0.0.1:8000/api/usb/status >/dev/null; then
-  echo "Backend chưa sẵn sàng — xem log: tail -f $LOG_DIR/backend.log"
+if ! curl -sf "http://127.0.0.1:${CMS_BACKEND_PORT}/api/health" >/dev/null; then
+  echo "Backend chưa sẵn sàng trên :${CMS_BACKEND_PORT} — xem log: tail -f $LOG_DIR/backend.log"
+  echo "Port 8000 có thể bị aaPanel chiếm — backend CMS dùng :${CMS_BACKEND_PORT}"
   exit 1
 fi
 
 echo ""
-echo "=== 5. Khởi động UI Docker (proxy → host:8000) ==="
+echo "=== 5. Khởi động UI Docker (proxy → host:${CMS_BACKEND_PORT}) ==="
 cd "$ROOT"
 docker compose -f docker-compose.usb-host.yml up -d --build
 
@@ -80,6 +84,6 @@ bash "$ROOT/scripts/check-usb-linux.sh"
 echo ""
 echo "Xong."
 echo "  UI:      http://127.0.0.1:8080"
-echo "  API:     http://127.0.0.1:8000/api/usb/status"
+echo "  API:     http://127.0.0.1:${CMS_BACKEND_PORT}/api/usb/status"
 echo "  Log:     tail -f $LOG_DIR/backend.log"
 echo "  Dừng:    kill \$(cat $PID_FILE); docker compose -f docker-compose.usb-host.yml down"

@@ -29,15 +29,18 @@ echo "=== 3. Backend đang chạy ở đâu? ==="
 if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^jablotron-cms-backend$'; then
   echo "  Docker container jablotron-cms-backend (thường KHÔNG thấy USB HID)"
   docker exec jablotron-cms-backend lsusb 2>/dev/null | grep -i 16d6 || echo "  → container không thấy 16d6"
+elif curl -sf http://127.0.0.1:8010/api/usb/status >/dev/null 2>&1; then
+  echo "  Native trên host :8010 (đúng cho USB)"
 elif curl -sf http://127.0.0.1:8000/api/usb/status >/dev/null 2>&1; then
-  echo "  Native trên host :8000 (đúng cho USB)"
+  echo "  Native trên host :8000"
 else
   echo "  Không thấy backend (Docker hoặc native)"
 fi
 
 echo ""
 echo "=== 4. API /api/usb/status ==="
-STATUS="$(curl -sf http://127.0.0.1:8000/api/usb/status 2>/dev/null \
+STATUS="$(curl -sf http://127.0.0.1:8010/api/usb/status 2>/dev/null \
+  || curl -sf http://127.0.0.1:8000/api/usb/status 2>/dev/null \
   || curl -sf http://127.0.0.1:8080/api/usb/status 2>/dev/null \
   || true)"
 if [[ -n "$STATUS" ]]; then
