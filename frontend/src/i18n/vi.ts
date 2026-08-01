@@ -62,6 +62,8 @@ export const vi = {
   devicesPageHint:
     'Khai báo tủ trung tâm, rồi đăng ký địa chỉ cảm biến Jablotron (nên thêm một lần theo dải, vd. 1→80).',
   addDevice: 'Thêm thiết bị',
+  syncDeviceStates: 'Đồng bộ trạng thái',
+  syncDeviceStatesOk: (n: number) => `Đã đồng bộ ${n} thiết bị từ tủ.`,
   addPanel: 'Thêm tủ',
   editDevice: 'Sửa thiết bị',
   editPanel: 'Sửa tủ',

@@ -243,6 +243,18 @@ export async function getPanel(panelId: string): Promise<Panel> {
   return res.json()
 }
 
+export async function syncPanelDevices(panelId: string): Promise<{
+  ok: boolean
+  synced?: number
+  states?: Record<string, string>
+}> {
+  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/sync-devices`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
 export async function listZones(panelId: string): Promise<Zone[]> {
   const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/zones`)
   if (!res.ok) throw new Error(await parseError(res))

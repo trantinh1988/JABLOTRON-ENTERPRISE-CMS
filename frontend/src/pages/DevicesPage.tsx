@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Pencil, Plus, Server, Settings2, Trash2 } from 'lucide-react'
+import { Pencil, Plus, RefreshCw, Server, Settings2, Trash2 } from 'lucide-react'
 import {
   createDevice,
   createDevicesBulk,
@@ -8,6 +8,7 @@ import {
   deleteDevice,
   deleteDevicesBulk,
   deletePanel,
+  syncPanelDevices,
   updateDevice,
   updatePanel,
   type Device,
@@ -244,6 +245,23 @@ export function DevicesPage({ panels, devices, writeAllowed, mockMode, usbHint, 
   const creating = formMode === 'device'
   const creatingPanel = formMode === 'panel'
 
+  const usbPanel = panels.find((p) => p.connection === 'usb')
+
+  async function handleSyncStates() {
+    if (!usbPanel) return
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await syncPanelDevices(usbPanel.panel_id)
+      setInfo(vi.syncDeviceStatesOk(result.synced ?? 0))
+      await onRefresh()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div className="mx-auto max-w-[1200px] px-5 py-5">
       <PageHeader
@@ -275,6 +293,11 @@ export function DevicesPage({ panels, devices, writeAllowed, mockMode, usbHint, 
             >
               <Plus className="size-3.5" /> {vi.addDevice}
             </Btn>
+            {usbPanel && (
+              <Btn tone="ghost" disabled={busy} onClick={() => void handleSyncStates()}>
+                <RefreshCw className="size-3.5" /> {vi.syncDeviceStates}
+              </Btn>
+            )}
           </div>
         }
       />

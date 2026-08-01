@@ -319,8 +319,50 @@ class UsbDeviceManager:
         self._sessions[panel_id] = session
         for pkt in build_init_sequence():
             self._hid_write(session, pkt)
-            await asyncio.sleep(0.05)
+            await asyncio.sleep(0.08)
         session.last_enable_states_at = time.monotonic()
+        await asyncio.sleep(0.2)
+        await self._initial_sync(panel_id)
+
+    async def sync_panel(self, panel_id: str) -> dict[str, Any]:
+        """Đọc HID và đẩy trạng thái thiết bị đã khai báo lên UI."""
+        if self.settings.usb_mock_mode:
+            return {"ok": True, "mode": "mock"}
+        if panel_id not in self._sessions:
+            return {"ok": False, "error": "panel_not_connected_usb"}
+        for _ in range(10):
+            await self._poll_session(panel_id)
+            await asyncio.sleep(0.12)
+        count = await self._publish_declared_states_snapshot(panel_id)
+        panel = self.panel_bus.panels.get(panel_id)
+        states = {
+            d["global_id"]: d.get("state", "ok")
+            for d in (panel.devices.values() if panel else [])
+        }
+        return {"ok": True, "synced": count, "states": states}
+
+    async def _initial_sync(self, panel_id: str) -> None:
+        for _ in range(8):
+            await self._poll_session(panel_id)
+            await asyncio.sleep(0.1)
+        await self._publish_declared_states_snapshot(panel_id)
+
+    async def _publish_declared_states_snapshot(self, panel_id: str) -> int:
+        panel = self.panel_bus.panels.get(panel_id)
+        if not panel or not panel.devices:
+            return 0
+        updates = {
+            gid: str(dev.get("state") or "ok")
+            for gid, dev in panel.devices.items()
+        }
+        await self.event_hub.publish(
+            {
+                "type": "devices_state_batch",
+                "panel_id": panel_id,
+                "updates": updates,
+            }
+        )
+        return len(updates)
 
     async def _poll_session(self, panel_id: str) -> None:
         session = self._sessions.get(panel_id)
@@ -336,12 +378,14 @@ class UsbDeviceManager:
         else:
             for pkt in build_poll_sequence():
                 self._hid_write(session, pkt)
-                await asyncio.sleep(0.03)
+                await asyncio.sleep(0.05)
 
-        for _ in range(8):
+        await asyncio.sleep(0.06)
+        for _ in range(24):
             raw = self._hid_read(session)
             if not raw:
-                break
+                await asyncio.sleep(0.02)
+                continue
             for packet in split_packets(raw):
                 updates = parse_packet(packet)
                 await self._apply_updates(panel_id, updates)
@@ -435,7 +479,7 @@ class UsbDeviceManager:
 
     def _hid_read(self, session: _HidSession) -> bytes:
         try:
-            data = session.device.read(64, timeout_ms=80)
+            data = session.device.read(64, timeout_ms=150)
             if not data:
                 return b""
             return strip_hid_report_id(bytes(data))

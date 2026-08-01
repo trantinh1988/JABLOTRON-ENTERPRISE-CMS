@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Response
 from app.core.deps import RequireWriteLicense
 from app.core.config import get_settings
 from app.iot_core.panel_bus import get_panel_bus
+from app.iot_core.usb_manager import get_usb_manager
 from app.iot_core.device_id import make_panel_id
 from app.schemas.common import (
     DeviceBulkCreateIn,
@@ -103,6 +104,18 @@ async def create_panel(body: PanelCreateIn, _: RequireWriteLicense) -> PanelOut:
         }
     )
     return _panel_out(bus, panel)
+
+
+@router.post("/{panel_id}/sync-devices")
+async def sync_panel_devices(panel_id: str) -> dict:
+    """Đọc trạng thái HID từ tủ và đồng bộ lên UI cho thiết bị đã khai báo."""
+    bus = get_panel_bus()
+    _require_panel(bus, panel_id)
+    result = await get_usb_manager().sync_panel(panel_id)
+    if not result.get("ok"):
+        code = str(result.get("error") or "sync_failed")
+        raise HTTPException(status_code=409, detail=code)
+    return result
 
 
 @router.patch("/{panel_id}", response_model=PanelOut)
@@ -360,6 +373,9 @@ async def create_device(body: DeviceCreateIn, _: RequireWriteLicense) -> DeviceO
             "detail": body.label or device["global_id"],
         }
     )
+    panel = bus.panels.get(body.panel_id)
+    if panel and panel.connection == "usb":
+        await get_usb_manager().sync_panel(body.panel_id)
     return DeviceOut.model_validate(device)
 
 
@@ -413,6 +429,9 @@ async def create_devices_bulk(body: DeviceBulkCreateIn, _: RequireWriteLicense) 
                 "detail": f"Khai báo {len(created)} thiết bị ({body.from_num}→{body.to_num})",
             }
         )
+        panel = bus.panels.get(body.panel_id)
+        if panel and panel.connection == "usb":
+            await get_usb_manager().sync_panel(body.panel_id)
     return DeviceBulkCreateOut(
         created=created,
         skipped=skipped,
