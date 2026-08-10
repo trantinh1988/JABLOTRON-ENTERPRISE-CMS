@@ -13,7 +13,10 @@ export function applyDeviceEvent(
   devices: Device[],
   event: CmsEvent,
 ): Device[] | 'refresh' {
-  if (event.type === 'devices_state_batch') {
+  if (
+    event.type === 'devices_state_batch' ||
+    event.type === 'devices_state_snapshot'
+  ) {
     const updates = batchUpdates(event)
     if (!updates) return devices
     let changed = false
@@ -41,20 +44,40 @@ export function applyDeviceEvent(
   return devices
 }
 
-/** Device IDs touched by a state event (for UI flash). */
+/** Device IDs touched by a state event (for UI flash). Snapshot = no flash. */
 export function deviceIdsFromEvent(event: CmsEvent): string[] {
   if (event.type === 'device_state' && event.device_id) {
     return [String(event.device_id)]
   }
   if (event.type === 'devices_state_batch') {
     const updates = batchUpdates(event)
-    return updates ? Object.keys(updates) : []
+    if (!updates) return []
+    // Only flash IDs whose state actually matters visually; caller may filter further.
+    return Object.keys(updates)
   }
   return []
 }
 
 export function isDeviceStateEvent(event: CmsEvent | null | undefined): boolean {
-  return !!event && (event.type === 'device_state' || event.type === 'devices_state_batch')
+  return (
+    !!event &&
+    (event.type === 'device_state' ||
+      event.type === 'devices_state_batch' ||
+      event.type === 'devices_state_snapshot')
+  )
+}
+
+export function isLiveSignalEvent(event: CmsEvent | null | undefined): boolean {
+  return (
+    !!event &&
+    (event.type === 'panel_live' ||
+      event.type === 'device_state' ||
+      event.type === 'devices_state_batch' ||
+      event.type === 'devices_state_snapshot' ||
+      event.type === 'panel_armed' ||
+      event.type === 'zone_armed' ||
+      event.type === 'pg_state')
+  )
 }
 
 export function shouldRefreshOnEvent(event: CmsEvent): boolean {

@@ -33,7 +33,11 @@ class Settings(BaseSettings):
     # Hot-plug / enumerate USB Link
     usb_scan_interval_sec: float = 2.0
     # Poll HID states for connected panels (realtime → WebSocket)
-    usb_poll_interval_sec: float = 0.35
+    usb_poll_interval_sec: float = 0.2
+    # Re-push full device snapshot over WS (reconcile UI even when states unchanged)
+    usb_snapshot_interval_sec: float = 2.0
+    # panel_live heartbeat so UI shows "Realtime tủ"
+    usb_live_heartbeat_sec: float = 1.0
     mock_event_interval_sec: float = 2.0
 
     @field_validator("jablotron_vendor_id", "jablotron_product_id", mode="before")

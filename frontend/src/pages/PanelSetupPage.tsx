@@ -112,7 +112,11 @@ export function PanelSetupPage({ writeAllowed, onRefresh, lastEvent, mockMode, u
   useEffect(() => {
     if (!lastEvent || !panelId) return
 
-    if (lastEvent.type === 'device_state' || lastEvent.type === 'devices_state_batch') {
+    if (
+      lastEvent.type === 'device_state' ||
+      lastEvent.type === 'devices_state_batch' ||
+      lastEvent.type === 'devices_state_snapshot'
+    ) {
       setDevices((prev) => {
         const patched = applyDeviceEvent(prev, lastEvent)
         if (patched === 'refresh') {

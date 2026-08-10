@@ -56,7 +56,10 @@ export function useEventStream(enabled = true) {
           if (data.type === 'connected') return
           setLastEvent(data)
           setEventSeq((n) => n + 1)
-          setEvents((prev) => [data, ...prev].slice(0, MAX_EVENTS))
+          // Keep feed readable — heartbeats/snapshots are high-frequency.
+          if (data.type !== 'panel_live' && data.type !== 'devices_state_snapshot') {
+            setEvents((prev) => [data, ...prev].slice(0, MAX_EVENTS))
+          }
         } catch {
           // ignore malformed
         }

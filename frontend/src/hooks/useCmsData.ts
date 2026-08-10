@@ -16,6 +16,7 @@ import {
   applyDeviceEvent,
   deviceIdsFromEvent,
   isDeviceStateEvent,
+  isLiveSignalEvent,
   shouldRefreshOnEvent,
 } from './deviceEventSync'
 
@@ -69,24 +70,46 @@ export function useCmsData() {
     if (!lastEvent) return
 
     if (isDeviceStateEvent(lastEvent)) {
+      let flashIds: string[] = []
       setDevices((prev) => {
         const patched = applyDeviceEvent(prev, lastEvent)
         if (patched === 'refresh') {
           void refresh()
           return prev
         }
+        if (lastEvent.type !== 'devices_state_snapshot' && patched !== prev) {
+          flashIds = deviceIdsFromEvent(lastEvent).filter((id) => {
+            const before = prev.find((d) => d.global_id === id)?.state
+            const after = patched.find((d) => d.global_id === id)?.state
+            return before !== after
+          })
+        }
         return patched
       })
-      const ids = deviceIdsFromEvent(lastEvent)
-      if (ids.length) {
-        setLiveSyncAt(Date.now())
-        setLiveActive(true)
-        setLiveFlashIds((prev) => {
-          const next = new Set(prev)
-          for (const id of ids) next.add(id)
+      if (flashIds.length) {
+        setLiveFlashIds((old) => {
+          const next = new Set(old)
+          for (const id of flashIds) next.add(id)
           return next
         })
       }
+    }
+
+    if (lastEvent.type === 'panel_live' && lastEvent.panel_id) {
+      setPanels((prev) =>
+        prev.map((p) =>
+          p.panel_id === lastEvent.panel_id
+            ? {
+                ...p,
+                connection: p.connection === 'disconnected' ? 'usb' : p.connection,
+                last_seen_at:
+                  typeof lastEvent.last_seen_at === 'string'
+                    ? lastEvent.last_seen_at
+                    : p.last_seen_at,
+              }
+            : p,
+        ),
+      )
     }
 
     if (lastEvent.type === 'panel_armed' && lastEvent.panel_id && lastEvent.armed_state) {
@@ -97,8 +120,15 @@ export function useCmsData() {
             : p,
         ),
       )
-      setLiveSyncAt(Date.now())
-      setLiveActive(true)
+    }
+
+    if (isLiveSignalEvent(lastEvent)) {
+      const receiving =
+        lastEvent.type !== 'panel_live' || lastEvent.receiving !== false
+      if (receiving) {
+        setLiveSyncAt(Date.now())
+        setLiveActive(true)
+      }
     }
 
     if (

@@ -42,6 +42,9 @@ class _HidSession:
     device: Any
     opened_at: float = field(default_factory=time.monotonic)
     last_enable_states_at: float = 0.0
+    last_live_publish_at: float = 0.0
+    last_snapshot_publish_at: float = 0.0
+    last_packet_at: float = 0.0
 
 
 class UsbDeviceManager:
@@ -710,7 +713,12 @@ class UsbDeviceManager:
             await asyncio.sleep(0.1)
         await self._publish_declared_states_snapshot(panel_id)
 
-    async def _publish_declared_states_snapshot(self, panel_id: str) -> int:
+    async def _publish_declared_states_snapshot(
+        self,
+        panel_id: str,
+        *,
+        event_type: str = "devices_state_batch",
+    ) -> int:
         panel = self.panel_bus.panels.get(panel_id)
         if not panel or not panel.devices:
             return 0
@@ -720,7 +728,7 @@ class UsbDeviceManager:
         }
         await self.event_hub.publish(
             {
-                "type": "devices_state_batch",
+                "type": event_type,
                 "panel_id": panel_id,
                 "updates": updates,
             }
@@ -733,40 +741,118 @@ class UsbDeviceManager:
         if not session:
             return collected
 
+        # 1) Drain anything already queued (async 0x55/0xd8 between polls).
+        batch: list[bytes] = []
+        batch.extend(await self._drain_hid(session, rounds=8 if intensive else 6, timeout_ms=20))
+
         now = time.monotonic()
-        if now - session.last_enable_states_at > 240:
+        # Re-enable device-state stream often enough for JA-100 push packets.
+        if now - session.last_enable_states_at > 60:
             for pkt in build_init_sequence():
                 self._hid_write(session, pkt)
-                await asyncio.sleep(0.03)
+                await asyncio.sleep(0.02)
             session.last_enable_states_at = now
         else:
             for pkt in build_poll_sequence():
                 self._hid_write(session, pkt)
-                await asyncio.sleep(0.02 if not intensive else 0.05)
+                await asyncio.sleep(0.015 if not intensive else 0.03)
 
-        await asyncio.sleep(0.04 if not intensive else 0.06)
-        batch: list[bytes] = []
-        read_rounds = 28 if intensive else 12
-        idle_sleep = 0.02 if intensive else 0.01
-        for _ in range(read_rounds):
-            raw = self._hid_read(session)
-            if not raw:
-                await asyncio.sleep(idle_sleep)
-                continue
-            batch.extend(split_packets(raw))
+        await asyncio.sleep(0.03 if not intensive else 0.05)
+        # 2) Read responses (sections/PG + any device-state packets).
+        batch.extend(
+            await self._drain_hid(
+                session,
+                rounds=36 if intensive else 18,
+                timeout_ms=40 if intensive else 25,
+            )
+        )
+
         # Activity bitmap first, then 0x55 events (TMP/alarm override ACT/OK).
+        # Apply once from merged view so one WS batch is emitted per poll.
         for packet in sorted(batch, key=packet_sort_key):
-            updates = parse_packet(packet)
-            merge_updates(collected, updates)
-            await self._apply_updates(panel_id, updates)
+            merge_updates(collected, parse_packet(packet))
+        if (
+            collected.device_states
+            or collected.section_states
+            or collected.pg_states
+            or collected.panel_armed
+        ):
+            await self._apply_updates(panel_id, collected)
 
+        panel = self.panel_bus.panels.get(panel_id)
         if batch:
-            panel = self.panel_bus.panels.get(panel_id)
+            session.last_packet_at = time.monotonic()
             if panel:
                 panel.last_seen_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 if panel.connection != "usb":
                     panel.connection = "usb"
+
+        await self._publish_live_signals(panel_id, session, collected, packet_count=len(batch))
         return collected
+
+    async def _drain_hid(
+        self,
+        session: _HidSession,
+        *,
+        rounds: int,
+        timeout_ms: int,
+    ) -> list[bytes]:
+        out: list[bytes] = []
+        empty_streak = 0
+        for _ in range(rounds):
+            raw = self._hid_read(session, timeout_ms=timeout_ms)
+            if not raw:
+                empty_streak += 1
+                if empty_streak >= 2:
+                    break
+                await asyncio.sleep(0.005)
+                continue
+            empty_streak = 0
+            out.extend(split_packets(raw))
+        return out
+
+    async def _publish_live_signals(
+        self,
+        panel_id: str,
+        session: _HidSession,
+        collected: ParsedUpdates,
+        *,
+        packet_count: int,
+    ) -> None:
+        """Heartbeat + periodic snapshot so UI stays realtime even when states are stable."""
+        now = time.monotonic()
+        heartbeat_sec = max(0.5, float(self.settings.usb_live_heartbeat_sec))
+        snapshot_sec = max(1.0, float(self.settings.usb_snapshot_interval_sec))
+
+        if (now - session.last_live_publish_at) >= heartbeat_sec:
+            session.last_live_publish_at = now
+            receiving = packet_count > 0 or (
+                session.last_packet_at > 0 and (now - session.last_packet_at) < 5.0
+            )
+            await self.event_hub.publish(
+                {
+                    "type": "panel_live",
+                    "panel_id": panel_id,
+                    "receiving": receiving,
+                    "packet_count": packet_count,
+                    "device_updates": len(collected.device_states),
+                    "section_updates": len(collected.section_states),
+                    "pg_updates": len(collected.pg_states),
+                    "last_seen_at": (
+                        self.panel_bus.panels[panel_id].last_seen_at
+                        if panel_id in self.panel_bus.panels
+                        else None
+                    ),
+                }
+            )
+
+        if (now - session.last_snapshot_publish_at) >= snapshot_sec:
+            session.last_snapshot_publish_at = now
+            # Quiet reconcile — UI applies states without row-flash spam.
+            await self._publish_declared_states_snapshot(
+                panel_id,
+                event_type="devices_state_snapshot",
+            )
 
     async def _apply_updates(self, panel_id: str, updates: ParsedUpdates) -> None:
         panel = self.panel_bus.panels.get(panel_id)
@@ -877,9 +963,9 @@ class UsbDeviceManager:
                 if raise_on_error:
                     raise second from first
 
-    def _hid_read(self, session: _HidSession) -> bytes:
+    def _hid_read(self, session: _HidSession, timeout_ms: int = 150) -> bytes:
         try:
-            data = session.device.read(64, timeout_ms=150)
+            data = session.device.read(64, timeout_ms=max(1, int(timeout_ms)))
             if not data:
                 return b""
             return strip_hid_report_id(bytes(data))

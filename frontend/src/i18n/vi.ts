@@ -299,6 +299,8 @@ export const eventTypeLabel: Record<string, string> = {
   panel_updated: 'Cập nhật tủ',
   panel_deleted: 'Xóa tủ trung tâm',
   panel_config_imported: 'Nhập cấu hình từ tủ',
+  panel_live: 'Realtime từ tủ',
+  devices_state_snapshot: 'Snapshot trạng thái',
 }
 
 export const actionLabel: Record<string, string> = {
