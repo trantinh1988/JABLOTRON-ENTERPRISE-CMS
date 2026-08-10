@@ -62,4 +62,21 @@
     background: color-mix(in srgb, var(--color-surface) 92%, transparent);
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02);
   }
+
+  .keypad-housing {
+    background:
+      linear-gradient(165deg, #f7f8fa 0%, #e4e7ec 55%, #d5dae2 100%);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+  }
+
+  .keypad-lcd {
+    background:
+      radial-gradient(120% 80% at 50% 0%, rgba(80, 120, 70, 0.18), transparent 55%),
+      linear-gradient(180deg, #151a1f 0%, #0f1318 100%);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .keypad-key {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
 }

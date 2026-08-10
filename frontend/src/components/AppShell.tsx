@@ -8,6 +8,7 @@ import {
   ShieldCheck,
 } from 'lucide-react'
 import type { LicenseStatus } from '../api/client'
+import { LICENSE_FEATURE_ENABLED } from '../config/features'
 import { vi } from '../i18n/vi'
 
 type Props = {
@@ -22,7 +23,9 @@ const nav = [
   { to: '/status', label: vi.navStatus, icon: List },
   { to: '/maps', label: vi.navMaps, icon: MapIcon },
   { to: '/history', label: vi.navHistory, icon: History },
-  { to: '/settings', label: vi.navSettings, icon: ShieldCheck },
+  ...(LICENSE_FEATURE_ENABLED
+    ? [{ to: '/settings', label: vi.navSettings, icon: ShieldCheck }]
+    : []),
 ]
 
 export function AppShell({ license, wsConnected, mockMode }: Props) {
@@ -63,7 +66,9 @@ export function AppShell({ license, wsConnected, mockMode }: Props) {
 
         <div className="mt-4 space-y-1.5 border-t border-line pt-3">
           <Chip label={wsConnected ? vi.wsLive : vi.wsDown} tone={wsConnected ? 'ok' : 'danger'} />
-          <Chip label={full ? vi.licenseFull : vi.licenseReadOnly} tone={full ? 'ok' : 'warn'} />
+          {LICENSE_FEATURE_ENABLED && (
+            <Chip label={full ? vi.licenseFull : vi.licenseReadOnly} tone={full ? 'ok' : 'warn'} />
+          )}
           {mockMode != null && (
             <Chip label={mockMode ? vi.usbMock : vi.usbHid} tone="neutral" />
           )}

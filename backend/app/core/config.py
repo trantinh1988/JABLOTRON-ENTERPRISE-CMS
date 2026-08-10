@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     app_code: str = "JABLOTRON_CMS_ENTERPRISE"
     debug: bool = True
 
+    # Tạm tắt kiểm tra bản quyền — đặt True khi hệ thống hoàn thành để mở lại.
+    license_enforced: bool = False
+
     database_url: str = f"sqlite+aiosqlite:///{(BACKEND_ROOT / 'data' / 'cms.db').as_posix()}"
     public_key_path: Path = REPO_ROOT / "keys" / "public_key.pem"
     license_store_path: Path = BACKEND_ROOT / "data" / "license.json"

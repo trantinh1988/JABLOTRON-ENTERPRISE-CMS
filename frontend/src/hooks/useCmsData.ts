@@ -10,6 +10,7 @@ import {
   type LicenseStatus,
   type Panel,
 } from '../api/client'
+import { LICENSE_FEATURE_ENABLED } from '../config/features'
 import { useEventStream } from './useEventStream'
 import { applyDeviceEvent, shouldRefreshOnEvent } from './deviceEventSync'
 
@@ -112,7 +113,7 @@ export function useCmsData() {
     }
   }, [lastEvent, refresh])
 
-  const writeAllowed = license?.mode === 'full'
+  const writeAllowed = !LICENSE_FEATURE_ENABLED || license?.mode === 'full'
 
   return {
     license,

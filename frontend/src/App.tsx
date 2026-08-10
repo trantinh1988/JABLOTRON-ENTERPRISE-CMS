@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AppShell } from './components/AppShell'
+import { LICENSE_FEATURE_ENABLED } from './config/features'
 import { useCmsData } from './hooks/useCmsData'
 import { DashboardPage } from './pages/DashboardPage'
 import { DevicesPage } from './pages/DevicesPage'
@@ -33,6 +34,7 @@ export default function App() {
                 writeAllowed={data.writeAllowed}
                 mockMode={data.mockMode}
                 events={data.events}
+                lastEvent={data.lastEvent}
                 loadError={data.loadError}
                 onRefresh={data.refresh}
               />
@@ -89,10 +91,12 @@ export default function App() {
             path="history"
             element={<HistoryPage panels={data.panels} liveEvents={data.events} />}
           />
-          <Route
-            path="settings"
-            element={<SettingsPage license={data.license} onChanged={data.refresh} />}
-          />
+          {LICENSE_FEATURE_ENABLED && (
+            <Route
+              path="settings"
+              element={<SettingsPage license={data.license} onChanged={data.refresh} />}
+            />
+          )}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

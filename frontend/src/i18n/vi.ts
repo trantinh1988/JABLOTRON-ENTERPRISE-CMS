@@ -1,7 +1,7 @@
 /** Nhãn tiếng Việt dùng chung trên UI */
 
 export const vi = {
-  brandSubtitle: 'USB trực tiếp · Bản quyền offline',
+  brandSubtitle: 'USB trực tiếp',
   brandTitle: 'Jablotron',
   brandAccent: 'Enterprise CMS',
 
@@ -41,6 +41,23 @@ export const vi = {
   partial: 'Bảo vệ một phần',
   queued: (action: string, n: number) => `Đã xếp lệnh ${action} cho ${n} tủ.`,
   devices: 'thiết bị',
+
+  keypadTitle: 'Bàn phím điều khiển',
+  keypadPageHint: 'Điều khiển theo section / toàn tủ · zone báo động · người dùng bật/tắt',
+  keypadPickPanel: 'Chọn một tủ để điều khiển.',
+  keypadNoSections: 'Chưa khai báo section — chỉ điều khiển toàn tủ (FULLY SET).',
+  keypadFullySet: 'FULLY SET',
+  keypadEnterCode: 'Nhập mã user trên bàn phím rồi chọn section / lệnh.',
+  keypadWrongCode: 'Mã không khớp user đã khai báo.',
+  keypadNoPermission: 'User không có quyền thao tác này.',
+  keypadOperatorCms: 'CMS',
+  keypadAlarmZones: (n: number) => `${n} zone đang mở / báo động`,
+  keypadZonesClear: 'Không có zone báo động',
+  keypadSectionStatus: 'Trạng thái section',
+  keypadAlarmTitle: 'Zone báo động',
+  keypadUserActivity: 'Người dùng bật / tắt',
+  eventTypeLabelZone: 'Section',
+  eventTypeLabelPanel: 'Toàn tủ',
 
   mapTitle: 'Bản đồ 2D thiết bị',
   allPanels: 'Tất cả tủ',
@@ -246,6 +263,7 @@ export const eventTypeLabel: Record<string, string> = {
   connected: 'Đã kết nối',
   device_state: 'Trạng thái thiết bị',
   panel_armed: 'Trạng thái bảo vệ tủ',
+  zone_armed: 'Trạng thái bảo vệ section',
   command_error: 'Lỗi lệnh',
   panel_connected: 'Tủ đã kết nối',
   panel_disconnected: 'Tủ mất kết nối',

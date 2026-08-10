@@ -1,4 +1,5 @@
 import type { LicenseStatus } from '../api/client'
+import { LICENSE_FEATURE_ENABLED } from '../config/features'
 import { vi } from '../i18n/vi'
 
 type Props = {
@@ -28,10 +29,12 @@ export function TopBar({ license, wsConnected, mockMode }: Props) {
             label={wsConnected ? vi.wsLive : vi.wsDown}
             tone={wsConnected ? 'ok' : 'danger'}
           />
-          <StatusChip
-            label={full ? vi.licenseFull : vi.licenseReadOnly}
-            tone={full ? 'ok' : 'warn'}
-          />
+          {LICENSE_FEATURE_ENABLED && (
+            <StatusChip
+              label={full ? vi.licenseFull : vi.licenseReadOnly}
+              tone={full ? 'ok' : 'warn'}
+            />
+          )}
           {mockMode != null && (
             <StatusChip label={mockMode ? vi.usbMock : vi.usbHid} tone="neutral" />
           )}

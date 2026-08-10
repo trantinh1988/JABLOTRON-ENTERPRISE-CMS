@@ -315,7 +315,7 @@ async def group_action(
     _: RequireWriteLicense,
 ) -> GroupActionOut:
     bus = get_panel_bus()
-    result = await bus.group_action(body.panel_ids, body.action)
+    result = await bus.group_action(body.panel_ids, body.action, detail=body.detail)
     return GroupActionOut.model_validate(result)
 
 

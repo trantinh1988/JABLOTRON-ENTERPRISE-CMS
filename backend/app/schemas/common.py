@@ -131,6 +131,7 @@ class ZoneUpdateIn(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=128)
     section_num: int | None = Field(None, ge=1, le=32)
     armed_state: str | None = None
+    detail: str | None = Field(None, max_length=256)
 
 
 PanelPermission = Literal["arm", "disarm", "partial", "pg_control", "bypass", "admin"]
@@ -188,6 +189,7 @@ class PgOutputUpdateIn(BaseModel):
 class GroupActionIn(BaseModel):
     panel_ids: list[str] = Field(..., min_length=1)
     action: Literal["arm", "disarm", "partial"]
+    detail: str | None = Field(None, max_length=256)
 
 
 class GroupActionOut(BaseModel):

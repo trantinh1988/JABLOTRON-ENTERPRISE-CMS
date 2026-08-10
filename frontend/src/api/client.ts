@@ -277,7 +277,7 @@ export async function createZone(
 export async function updateZone(
   panelId: string,
   zoneId: string,
-  body: Partial<{ name: string; section_num: number; armed_state: string }>,
+  body: Partial<{ name: string; section_num: number; armed_state: string; detail: string }>,
 ): Promise<Zone> {
   const res = await fetch(
     `/api/panels/${encodeURIComponent(panelId)}/zones/${encodeURIComponent(zoneId)}`,
@@ -504,11 +504,15 @@ export async function listEventHistory(params?: {
   return res.json()
 }
 
-export async function groupAction(panelIds: string[], action: GroupAction) {
+export async function groupAction(
+  panelIds: string[],
+  action: GroupAction,
+  detail?: string,
+) {
   const res = await fetch('/api/panels/group-action', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ panel_ids: panelIds, action }),
+    body: JSON.stringify({ panel_ids: panelIds, action, detail }),
   })
   if (!res.ok) throw new Error(await parseError(res))
   return res.json() as Promise<{

@@ -21,8 +21,11 @@ LicenseServiceDep = Annotated[LicenseService, Depends(get_license_service)]
 async def require_write_license(
     request: Request,
     license_service: LicenseServiceDep,
+    settings: SettingsDep,
 ) -> None:
     """Block control APIs when license is missing, invalid, or expired (read-only mode)."""
+    if not settings.license_enforced:
+        return
     status_info = license_service.get_status()
     if status_info.mode != "full":
         raise HTTPException(

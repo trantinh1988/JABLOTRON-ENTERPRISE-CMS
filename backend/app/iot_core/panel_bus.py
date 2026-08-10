@@ -286,6 +286,7 @@ class PanelBus:
         if not panel or zone_id not in panel.zones:
             return None
         zone = panel.zones[zone_id]
+        prev_armed = zone.get("armed_state")
         if "name" in fields and fields["name"] is not None:
             zone["name"] = fields["name"].strip() or zone["name"]
         if "section_num" in fields and fields["section_num"] is not None:
@@ -297,7 +298,46 @@ class PanelBus:
             zone["armed_state"] = fields["armed_state"]
         if self._persist:
             await panel_store.save_zone(zone)
+        if (
+            "armed_state" in fields
+            and fields["armed_state"] is not None
+            and zone.get("armed_state") != prev_armed
+        ):
+            await self.event_hub.publish(
+                {
+                    "type": "zone_armed",
+                    "panel_id": panel_id,
+                    "zone_id": zone_id,
+                    "armed_state": zone["armed_state"],
+                    "detail": fields.get("detail"),
+                }
+            )
+            await self._sync_panel_armed_from_zones(panel_id)
         return zone
+
+    async def _sync_panel_armed_from_zones(self, panel_id: str) -> None:
+        panel = self.panels.get(panel_id)
+        if not panel or not panel.zones:
+            return
+        states = [z.get("armed_state") or "disarmed" for z in panel.zones.values()]
+        if all(s == "armed" for s in states):
+            armed = "armed"
+        elif all(s == "disarmed" for s in states):
+            armed = "disarmed"
+        else:
+            armed = "partial"
+        if panel.armed_state == armed:
+            return
+        panel.armed_state = armed
+        if self._persist:
+            await panel_store.save_panel(panel)
+        await self.event_hub.publish(
+            {
+                "type": "panel_armed",
+                "panel_id": panel_id,
+                "armed_state": armed,
+            }
+        )
 
     async def delete_zone(self, panel_id: str, zone_id: str) -> bool:
         panel = self.panels.get(panel_id)
@@ -505,13 +545,19 @@ class PanelBus:
         )
         return device
 
-    async def group_action(self, panel_ids: list[str], action: ActionName) -> dict[str, Any]:
+    async def group_action(
+        self,
+        panel_ids: list[str],
+        action: ActionName,
+        *,
+        detail: str | None = None,
+    ) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         for panel_id in panel_ids:
             if panel_id not in self.panels:
                 results.append({"panel_id": panel_id, "ok": False, "error": "panel_not_found"})
                 continue
-            await self._queues[panel_id].put({"action": action})
+            await self._queues[panel_id].put({"action": action, "detail": detail})
             results.append({"panel_id": panel_id, "ok": True, "queued": True, "action": action})
         return {"action": action, "results": results}
 
@@ -521,23 +567,43 @@ class PanelBus:
             cmd = await queue.get()
             try:
                 action: ActionName = cmd["action"]
+                operator_detail = cmd.get("detail")
                 ok = True
                 detail = "mock_ok"
                 if self._command_sender is not None:
                     ok, detail = await self._command_sender.send_action(panel_id, action)
                 if ok:
+                    event_detail = operator_detail or detail
                     armed = {"arm": "armed", "disarm": "disarmed", "partial": "partial"}[action]
-                    self.panels[panel_id].armed_state = armed
+                    panel = self.panels[panel_id]
+                    panel.armed_state = armed
                     if self._persist:
-                        await panel_store.save_panel(self.panels[panel_id])
+                        await panel_store.save_panel(panel)
                     await self.event_hub.publish(
                         {
                             "type": "panel_armed",
                             "panel_id": panel_id,
                             "armed_state": armed,
-                            "detail": detail,
+                            "detail": event_detail,
                         }
                     )
+                    # Đồng bộ section khi điều khiển toàn tủ (không áp dụng partial).
+                    if action in ("arm", "disarm") and panel.zones:
+                        for zone in panel.zones.values():
+                            if zone.get("armed_state") == armed:
+                                continue
+                            zone["armed_state"] = armed
+                            if self._persist:
+                                await panel_store.save_zone(zone)
+                            await self.event_hub.publish(
+                                {
+                                    "type": "zone_armed",
+                                    "panel_id": panel_id,
+                                    "zone_id": zone["zone_id"],
+                                    "armed_state": armed,
+                                    "detail": event_detail,
+                                }
+                            )
                 else:
                     await self.event_hub.publish(
                         {
