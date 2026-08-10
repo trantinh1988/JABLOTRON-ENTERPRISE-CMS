@@ -40,6 +40,7 @@ export function StatusPage({ panels, devices, onRefresh }: Props) {
 
   const alarmCount = devices.filter((d) => d.state === 'alarm').length
   const openCount = devices.filter((d) => d.state === 'open').length
+  const tamperCount = devices.filter((d) => d.state === 'tamper' || d.state === 'fault').length
   const okCount = devices.filter((d) => d.state === 'ok').length
 
   return (
@@ -61,8 +62,9 @@ export function StatusPage({ panels, devices, onRefresh }: Props) {
         }
       />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label={vi.legendAlarm} value={alarmCount} tone="danger" />
+        <StatCard label={vi.legendTamper} value={tamperCount} tone="danger" />
         <StatCard label={vi.legendOpen} value={openCount} tone="warn" />
         <StatCard label={vi.legendOk} value={okCount} tone="ok" />
       </div>
@@ -117,6 +119,8 @@ export function StatusPage({ panels, devices, onRefresh }: Props) {
           <option value="ok">{vi.legendOk}</option>
           <option value="open">{vi.legendOpen}</option>
           <option value="alarm">{vi.legendAlarm}</option>
+          <option value="tamper">{vi.legendTamper}</option>
+          <option value="fault">{vi.legendFault}</option>
         </select>
       </div>
 
@@ -138,7 +142,7 @@ export function StatusPage({ panels, devices, onRefresh }: Props) {
                 <tr
                   key={d.global_id}
                   className={`border-b border-line/60 ${
-                    d.state === 'alarm'
+                    d.state === 'alarm' || d.state === 'tamper' || d.state === 'fault'
                       ? 'bg-danger/5'
                       : d.state === 'open'
                         ? 'bg-warn/5'

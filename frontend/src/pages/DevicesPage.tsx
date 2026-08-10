@@ -255,7 +255,12 @@ export function DevicesPage({ panels, devices, writeAllowed, mockMode, usbHint, 
     setError(null)
     try {
       const result = await syncPanelDevices(usbPanel.panel_id)
-      setInfo(vi.syncDeviceStatesOk(result.synced ?? 0))
+      const base = vi.syncDeviceStatesOk(result.synced ?? 0)
+      const detail =
+        result.matched_declared != null
+          ? ` ${vi.syncDeviceStatesDetail(result.matched_declared, result.hid_device_updates ?? 0)}`
+          : ''
+      setInfo(base + detail)
       await onRefresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

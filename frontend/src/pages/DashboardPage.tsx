@@ -54,7 +54,10 @@ export function DashboardPage({
   )
 
   const alarmDevices = useMemo(
-    () => panelDevices.filter((d) => d.state === 'alarm' || d.state === 'open'),
+    () =>
+      panelDevices.filter(
+        (d) => d.state === 'alarm' || d.state === 'open' || d.state === 'tamper' || d.state === 'fault',
+      ),
     [panelDevices],
   )
 

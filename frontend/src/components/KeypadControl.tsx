@@ -65,7 +65,10 @@ export function KeypadControl({
   )
 
   const alarmDevices = useMemo(
-    () => devices.filter((d) => d.state === 'alarm' || d.state === 'open'),
+    () =>
+      devices.filter(
+        (d) => d.state === 'alarm' || d.state === 'open' || d.state === 'tamper' || d.state === 'fault',
+      ),
     [devices],
   )
 

@@ -1,10 +1,11 @@
 """Jablotron JA-100 USB/HID packet helpers (compatible with Link serial 16D6:0008).
 
 Derived from the community JA-100 protocol (Home Assistant jablotron100 integration).
+Binary packing matches kukulich/jablotron100: multi-byte little-endian.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum
 
 STREAM_PACKET_SIZE = 64
@@ -36,6 +37,10 @@ DEFAULT_AUTH_PREFIX = "999"
 DEVICE_STATE_EVENT_MASK = 0x1F
 TIMEOUT_DEVICE_STATE_PACKETS_MIN = 5
 
+# F-Link Status column mapping (approximate):
+# OK → ok | ACT → open | TMP → tamper | Error/Fault → fault | alarm zones → alarm
+PROBLEM_DEVICE_STATES = frozenset({"tamper", "fault", "alarm"})
+
 
 class DeviceStateEvent(IntEnum):
     INSTANT_ALARM = 0x00
@@ -43,7 +48,12 @@ class DeviceStateEvent(IntEnum):
     DELAYED_ALARM_B = 0x02
     DELAYED_ALARM_C = 0x03
     ACTIVITY = 0x04
+    POWER_SUPPLY_FAULT = 0x05
+    SABOTAGE = 0x06  # F-Link TMP
+    FAULT = 0x07
+    REPEATED_ALARM = 0x08
     HEARTBEAT = 0x0F
+    BATTERY_FAULT = 0x14
 
 
 class SectionPrimaryState(IntEnum):
@@ -58,6 +68,8 @@ class ParsedUpdates:
     section_states: dict[int, str]
     pg_states: dict[int, str]
     panel_armed: str | None
+    # device nums from 0x55 events — may clear TMP/fault even when activity bitmap says ok
+    device_state_force: set[int] = field(default_factory=set)
 
 
 @dataclass
@@ -70,16 +82,37 @@ class InventoryHints:
 
 
 def empty_updates() -> ParsedUpdates:
-    return ParsedUpdates(device_states={}, section_states={}, pg_states={}, panel_armed=None)
+    return ParsedUpdates(
+        device_states={},
+        section_states={},
+        pg_states={},
+        panel_armed=None,
+        device_state_force=set(),
+    )
 
 
 def merge_updates(base: ParsedUpdates, other: ParsedUpdates) -> ParsedUpdates:
     base.device_states.update(other.device_states)
     base.section_states.update(other.section_states)
     base.pg_states.update(other.pg_states)
+    base.device_state_force.update(other.device_state_force)
     if other.panel_armed is not None:
         base.panel_armed = other.panel_armed
     return base
+
+
+def packet_sort_key(packet: bytes) -> int:
+    """Apply activity bitmap before per-device events so TMP/alarm wins in one poll."""
+    ptype = packet[:1]
+    if ptype == PACKET_DEVICES_STATES:
+        return 0
+    if ptype == PACKET_DEVICE_STATE:
+        return 1
+    if ptype == PACKET_SECTIONS_STATES:
+        return 2
+    if ptype == PACKET_PG_OUTPUTS_STATES:
+        return 3
+    return 9
 
 
 def inventory_hints_from_updates(updates: ParsedUpdates) -> InventoryHints:
@@ -98,7 +131,10 @@ def int_to_bytes(value: int) -> bytes:
 
 
 def bytes_to_int(data: bytes) -> int:
-    return data[0] if data else 0
+    """Little-endian integer (HA jablotron100 compatible)."""
+    if not data:
+        return 0
+    return int.from_bytes(data, byteorder="little")
 
 
 def create_packet(packet_type: bytes, data: bytes) -> bytes:
@@ -239,9 +275,25 @@ def _event_to_state(event: int, on_off: str | None) -> str:
         DeviceStateEvent.DELAYED_ALARM_A,
         DeviceStateEvent.DELAYED_ALARM_B,
         DeviceStateEvent.DELAYED_ALARM_C,
+        DeviceStateEvent.REPEATED_ALARM,
     ):
         return "alarm"
+    if event == DeviceStateEvent.SABOTAGE:
+        # F-Link TMP — ON keeps tamper, OFF clears
+        if on_off == "ok":
+            return "ok"
+        return "tamper"
+    if event in (
+        DeviceStateEvent.FAULT,
+        DeviceStateEvent.POWER_SUPPLY_FAULT,
+        DeviceStateEvent.BATTERY_FAULT,
+    ):
+        if on_off == "ok":
+            return "ok"
+        return "fault"
     if event == DeviceStateEvent.ACTIVITY:
+        if on_off == "ok":
+            return "ok"
         return "open"
     if on_off == "open":
         return "open"
@@ -250,9 +302,19 @@ def _event_to_state(event: int, on_off: str | None) -> str:
     return "ok"
 
 
+def _bytes_to_binary(data: bytes) -> str:
+    """HA-compatible: little-endian int → MSB-left binary string."""
+    if not data:
+        return ""
+    return bin(bytes_to_int(data))[2:].zfill(len(data) * 8)
+
+
 def _bytes_to_reverse_binary(data: bytes) -> str:
-    bits = "".join(f"{b:08b}" for b in data)
-    return bits[::-1]
+    return _bytes_to_binary(data)[::-1]
+
+
+def _binary_to_int(bits: str) -> int:
+    return int(bits, 2) if bits else 0
 
 
 def _section_armed_state(section_packet: bytes) -> str | None:
@@ -270,14 +332,6 @@ def _section_armed_state(section_packet: bytes) -> str | None:
     if state == SectionPrimaryState.ARMED_FULL:
         return "armed"
     return None
-
-
-def _bytes_to_binary(data: bytes) -> str:
-    return "".join(f"{b:08b}" for b in data)
-
-
-def _binary_to_int(bits: str) -> int:
-    return int(bits, 2) if bits else 0
 
 
 def _parse_device_number(packet: bytes) -> int:
@@ -301,8 +355,10 @@ def parse_packet(packet: bytes) -> ParsedUpdates:
         state_byte = bytes_to_int(packet[3:4])
         on_off = _device_on_off_state(device_num, state_byte)
         out.device_states[device_num] = _event_to_state(event_val, on_off)
+        out.device_state_force.add(device_num)
 
     elif ptype == PACKET_DEVICES_STATES and len(packet) >= 3:
+        # HA: length at [1], payload at [2:2+len], skip first payload byte, reverse bits.
         length = bytes_to_int(packet[1:2])
         start = 3
         end = min(len(packet), 2 + length)
@@ -310,11 +366,10 @@ def parse_packet(packet: bytes) -> ParsedUpdates:
             bits = _bytes_to_reverse_binary(packet[start:end])
             for idx, bit in enumerate(bits):
                 if idx == 0:
-                    continue
-                if bit == "1":
-                    out.device_states[idx] = "open"
-                else:
-                    out.device_states[idx] = "ok"
+                    continue  # central unit
+                if idx > 99:
+                    break
+                out.device_states[idx] = "open" if bit == "1" else "ok"
 
     elif ptype == PACKET_SECTIONS_STATES:
         armed_counts = {"disarmed": 0, "partial": 0, "armed": 0}

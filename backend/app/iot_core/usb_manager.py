@@ -10,6 +10,7 @@ from app.core.config import Settings, get_settings
 from app.iot_core.device_id import make_device_global_id, make_panel_id
 from app.iot_core.event_hub import EventHub, get_event_hub
 from app.iot_core.jablotron_protocol import (
+    PROBLEM_DEVICE_STATES,
     ParsedUpdates,
     build_arm_sequence,
     build_init_sequence,
@@ -20,6 +21,7 @@ from app.iot_core.jablotron_protocol import (
     merge_updates,
     pad_hid_packet,
     parse_packet,
+    packet_sort_key,
     split_packets,
     strip_hid_report_id,
 )
@@ -414,8 +416,21 @@ class UsbDeviceManager:
             return {"ok": True, "mode": "mock"}
         if panel_id not in self._sessions:
             return {"ok": False, "error": "panel_not_connected_usb"}
-        for _ in range(10):
-            await self._poll_session(panel_id)
+
+        session = self._sessions[panel_id]
+        # Force re-enable device-state packets (0x55 / 0xd8) before snapshot poll.
+        for pkt in build_init_sequence():
+            self._hid_write(session, pkt)
+            await asyncio.sleep(0.05)
+        session.last_enable_states_at = time.monotonic()
+        await asyncio.sleep(0.15)
+
+        applied_total = 0
+        seen_nums: set[int] = set()
+        for _ in range(14):
+            part = await self._poll_session(panel_id)
+            applied_total += len(part.device_states)
+            seen_nums.update(part.device_states.keys())
             await asyncio.sleep(0.12)
         count = await self._publish_declared_states_snapshot(panel_id)
         panel = self.panel_bus.panels.get(panel_id)
@@ -423,7 +438,20 @@ class UsbDeviceManager:
             d["global_id"]: d.get("state", "ok")
             for d in (panel.devices.values() if panel else [])
         }
-        return {"ok": True, "synced": count, "states": states}
+        declared = set(panel.devices.keys()) if panel else set()
+        matched = {
+            make_device_global_id(panel_id, n)
+            for n in seen_nums
+            if make_device_global_id(panel_id, n) in declared
+        }
+        return {
+            "ok": True,
+            "synced": count,
+            "hid_device_updates": applied_total,
+            "hid_device_nums": sorted(seen_nums),
+            "matched_declared": len(matched),
+            "states": states,
+        }
 
     async def probe_config(self, panel_id: str) -> dict[str, Any]:
         """Đọc packet trạng thái HID để suy ra số section / device / PG (gợi ý)."""
@@ -674,15 +702,18 @@ class UsbDeviceManager:
                 await asyncio.sleep(0.05)
 
         await asyncio.sleep(0.06)
+        batch: list[bytes] = []
         for _ in range(24):
             raw = self._hid_read(session)
             if not raw:
                 await asyncio.sleep(0.02)
                 continue
-            for packet in split_packets(raw):
-                updates = parse_packet(packet)
-                merge_updates(collected, updates)
-                await self._apply_updates(panel_id, updates)
+            batch.extend(split_packets(raw))
+        # Activity bitmap first, then 0x55 events (TMP/alarm override ACT/OK).
+        for packet in sorted(batch, key=packet_sort_key):
+            updates = parse_packet(packet)
+            merge_updates(collected, updates)
+            await self._apply_updates(panel_id, updates)
         return collected
 
     async def _apply_updates(self, panel_id: str, updates: ParsedUpdates) -> None:
@@ -718,25 +749,44 @@ class UsbDeviceManager:
                     )
 
         if updates.device_states:
-            await self._apply_device_states(panel_id, updates.device_states)
+            await self._apply_device_states(
+                panel_id,
+                updates.device_states,
+                force_nums=updates.device_state_force,
+            )
 
         for pg_num, pg_state in updates.pg_states.items():
             for pg in panel.pgs.values():
                 if pg.get("pg_num") == pg_num and pg.get("state") != pg_state:
                     await self.panel_bus.update_pg(panel_id, pg["pg_id"], state=pg_state)
 
-    async def _apply_device_states(self, panel_id: str, device_states: dict[int, str]) -> None:
+    async def _apply_device_states(
+        self,
+        panel_id: str,
+        device_states: dict[int, str],
+        *,
+        force_nums: set[int] | None = None,
+    ) -> None:
         panel = self.panel_bus.panels.get(panel_id)
         if not panel:
             return
 
+        force_nums = force_nums or set()
         updates: dict[str, str] = {}
         for device_num, state in device_states.items():
             global_id = make_device_global_id(panel_id, device_num)
             if global_id not in panel.devices:
                 continue
             device = panel.devices[global_id]
-            if device.get("state") == state:
+            current = str(device.get("state") or "ok")
+            if current == state:
+                continue
+            # Activity bitmap (0xd8) must not wipe TMP/fault/alarm from 0x55.
+            if (
+                device_num not in force_nums
+                and current in PROBLEM_DEVICE_STATES
+                and state in ("ok", "open")
+            ):
                 continue
             device["state"] = state
             updates[global_id] = state

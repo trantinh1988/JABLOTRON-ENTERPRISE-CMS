@@ -81,6 +81,12 @@ export const vi = {
   addDevice: 'Thêm thiết bị',
   syncDeviceStates: 'Đồng bộ trạng thái',
   syncDeviceStatesOk: (n: number) => `Đã đồng bộ ${n} thiết bị từ tủ.`,
+  syncDeviceStatesDetail: (matched: number, hid: number) =>
+    `Khớp ${matched} địa chỉ đã khai báo · nhận ${hid} cập nhật HID.`,
+  legendTamper: 'Phá hoại (TMP)',
+  legendFault: 'Lỗi',
+  tamper: 'phá hoại',
+  fault: 'lỗi',
   importPanelConfig: 'Nhập cấu hình từ tủ',
   importPanelConfigHint:
     'Tạo vùng / địa chỉ / user / PG theo số lượng như F-Link Initial setup. HID chỉ suy ra được section/device/PG; user và PIN phải nhập tay.',
@@ -237,8 +243,10 @@ export const connectionLabel: Record<string, string> = {
 
 export const deviceStateLabel: Record<string, string> = {
   ok: 'Bình thường',
-  open: 'Mở',
+  open: 'Mở (ACT)',
   alarm: 'Báo động',
+  tamper: 'Phá hoại (TMP)',
+  fault: 'Lỗi',
 }
 
 export const deviceTypeLabel: Record<string, string> = {

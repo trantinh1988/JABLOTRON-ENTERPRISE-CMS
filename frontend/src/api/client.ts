@@ -246,6 +246,9 @@ export async function getPanel(panelId: string): Promise<Panel> {
 export async function syncPanelDevices(panelId: string): Promise<{
   ok: boolean
   synced?: number
+  hid_device_updates?: number
+  hid_device_nums?: number[]
+  matched_declared?: number
   states?: Record<string, string>
 }> {
   const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/sync-devices`, {

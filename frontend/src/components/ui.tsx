@@ -85,6 +85,12 @@ export const inputClass =
 
 export function StateDot({ state }: { state: string }) {
   const color =
-    state === 'alarm' ? 'bg-danger' : state === 'open' ? 'bg-warn' : 'bg-ok'
+    state === 'alarm' || state === 'tamper'
+      ? 'bg-danger'
+      : state === 'fault'
+        ? 'bg-danger/70'
+        : state === 'open'
+          ? 'bg-warn'
+          : 'bg-ok'
   return <span className={`inline-block size-2 rounded-full ${color}`} />
 }
