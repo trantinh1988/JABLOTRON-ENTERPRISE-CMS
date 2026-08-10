@@ -77,10 +77,23 @@ export const vi = {
 
   devicesPageTitle: 'Khai báo thiết bị',
   devicesPageHint:
-    'Khai báo tủ trung tâm, rồi đăng ký địa chỉ cảm biến Jablotron (nên thêm một lần theo dải, vd. 1→80).',
+    'Khai báo tủ trung tâm, rồi đăng ký địa chỉ cảm biến — hoặc dùng “Nhập cấu hình từ tủ” theo số liệu F-Link Initial setup.',
   addDevice: 'Thêm thiết bị',
   syncDeviceStates: 'Đồng bộ trạng thái',
   syncDeviceStatesOk: (n: number) => `Đã đồng bộ ${n} thiết bị từ tủ.`,
+  importPanelConfig: 'Nhập cấu hình từ tủ',
+  importPanelConfigHint:
+    'Tạo vùng / địa chỉ / user / PG theo số lượng như F-Link Initial setup. HID chỉ suy ra được section/device/PG; user và PIN phải nhập tay.',
+  importPanelConfigProbe: 'Đọc gợi ý từ tủ',
+  importPanelConfigProbeOk: 'Đã đọc gợi ý từ tủ — kiểm tra số liệu rồi bấm Nhập.',
+  importPanelConfigRun: 'Nhập cấu hình',
+  importPanelConfigOk: (z: number, d: number, u: number, p: number) =>
+    `Đã nhập: +${z} vùng, +${d} thiết bị, +${u} user, +${p} PG. Chỉnh nhãn/loại/PIN nếu cần.`,
+  importSectionCount: 'Số section',
+  importDeviceCount: 'Số thiết bị',
+  importUserCount: 'Số user',
+  importPgCount: 'Số PG',
+  importSelectPanel: 'Chọn tủ để nhập',
   addPanel: 'Thêm tủ',
   editDevice: 'Sửa thiết bị',
   editPanel: 'Sửa tủ',
@@ -274,6 +287,7 @@ export const eventTypeLabel: Record<string, string> = {
   panel_declared: 'Khai báo tủ trung tâm',
   panel_updated: 'Cập nhật tủ',
   panel_deleted: 'Xóa tủ trung tâm',
+  panel_config_imported: 'Nhập cấu hình từ tủ',
 }
 
 export const actionLabel: Record<string, string> = {
@@ -286,6 +300,8 @@ export const actionLabel: Record<string, string> = {
 export const commandErrorLabel: Record<string, string> = {
   panel_not_connected_usb:
     'Tủ chưa kết nối USB — cắm cáp Link Jablotron và chạy backend có quyền USB (./scripts/start-backend-usb.sh)',
+  import_counts_required:
+    'Tủ chưa kết nối USB — hãy nhập đủ Số section / thiết bị / PG (như trên F-Link Initial setup).',
   panel_not_found: 'Không tìm thấy tủ',
   pin_required: 'Cần nhập mã PIN trên bàn phím trước khi bật/tắt bảo vệ.',
   wrong_pin_code: 'Mã PIN sai hoặc không đủ quyền trên tủ.',

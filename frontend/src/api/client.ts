@@ -255,6 +255,72 @@ export async function syncPanelDevices(panelId: string): Promise<{
   return res.json()
 }
 
+export type PanelProbeConfig = {
+  ok: boolean
+  mode?: string | null
+  section_nums?: number[]
+  section_count_hint?: number | null
+  device_count_hint?: number | null
+  pg_count_hint?: number | null
+  user_count_hint?: number | null
+  note?: string | null
+}
+
+export type PanelImportConfigBody = {
+  section_count?: number | null
+  device_count?: number | null
+  user_count?: number | null
+  pg_count?: number | null
+  device_type?: string
+  create_sections?: boolean
+  create_devices?: boolean
+  create_users?: boolean
+  create_pgs?: boolean
+  assign_devices_to_first_zone?: boolean
+}
+
+export type PanelImportConfigResult = {
+  ok: boolean
+  sections_created: number
+  devices_created: number
+  users_created: number
+  pgs_created: number
+  sections_skipped: number
+  devices_skipped: number
+  users_skipped: number
+  pgs_skipped: number
+  used: {
+    section_count?: number
+    device_count?: number
+    user_count?: number
+    pg_count?: number
+  }
+  probed?: PanelProbeConfig | null
+  synced?: number | null
+  note?: string | null
+}
+
+export async function probePanelConfig(panelId: string): Promise<PanelProbeConfig> {
+  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/probe-config`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function importPanelConfig(
+  panelId: string,
+  body: PanelImportConfigBody,
+): Promise<PanelImportConfigResult> {
+  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/import-config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
 export async function listZones(panelId: string): Promise<Zone[]> {
   const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/zones`)
   if (!res.ok) throw new Error(await parseError(res))

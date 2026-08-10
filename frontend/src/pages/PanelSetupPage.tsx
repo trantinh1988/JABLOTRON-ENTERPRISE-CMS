@@ -29,6 +29,7 @@ import {
   type Zone,
 } from '../api/client'
 import { DeviceTypeIcon } from '../components/DeviceTypeIcon'
+import { ImportPanelConfigCard } from '../components/ImportPanelConfigCard'
 import { Btn, Card, Field, StateDot, inputClass } from '../components/ui'
 import {
   armedStateLabel,
@@ -213,28 +214,40 @@ export function PanelSetupPage({ writeAllowed, onRefresh, lastEvent, mockMode, u
       </div>
 
       {tab === 'overview' && panel && (
-        <OverviewTab
-          panel={panel}
-          zones={zones}
-          users={users}
-          devices={devices}
-          pgs={pgs}
-          writeAllowed={writeAllowed}
-          busy={busy}
-          onSave={async (name) => {
-            setBusy(true)
-            setError(null)
-            try {
-              await updatePanel(panelId, name)
-              setInfo(vi.panelUpdated)
-              await reload()
-            } catch (e) {
-              setError(e instanceof Error ? e.message : String(e))
-            } finally {
-              setBusy(false)
-            }
-          }}
-        />
+        <>
+          <ImportPanelConfigCard
+            panels={[panel]}
+            selectedPanelId={panel.panel_id}
+            writeAllowed={writeAllowed}
+            busy={busy}
+            onBusy={setBusy}
+            onError={setError}
+            onInfo={setInfo}
+            onDone={reload}
+          />
+          <OverviewTab
+            panel={panel}
+            zones={zones}
+            users={users}
+            devices={devices}
+            pgs={pgs}
+            writeAllowed={writeAllowed}
+            busy={busy}
+            onSave={async (name) => {
+              setBusy(true)
+              setError(null)
+              try {
+                await updatePanel(panelId, name)
+                setInfo(vi.panelUpdated)
+                await reload()
+              } catch (e) {
+                setError(e instanceof Error ? e.message : String(e))
+              } finally {
+                setBusy(false)
+              }
+            }}
+          />
+        </>
       )}
 
       {tab === 'zones' && (

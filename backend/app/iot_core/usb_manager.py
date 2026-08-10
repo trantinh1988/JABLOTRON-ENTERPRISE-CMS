@@ -14,7 +14,10 @@ from app.iot_core.jablotron_protocol import (
     build_arm_sequence,
     build_init_sequence,
     build_poll_sequence,
+    empty_updates,
+    inventory_hints_from_updates,
     is_login_error_packet,
+    merge_updates,
     pad_hid_packet,
     parse_packet,
     split_packets,
@@ -422,6 +425,214 @@ class UsbDeviceManager:
         }
         return {"ok": True, "synced": count, "states": states}
 
+    async def probe_config(self, panel_id: str) -> dict[str, Any]:
+        """Đọc packet trạng thái HID để suy ra số section / device / PG (gợi ý)."""
+        if self.settings.usb_mock_mode:
+            return {
+                "ok": True,
+                "mode": "mock",
+                "section_nums": [1],
+                "section_count_hint": 1,
+                "device_count_hint": 12,
+                "pg_count_hint": 8,
+                "user_count_hint": None,
+                "note": "mock_defaults",
+            }
+        if panel_id not in self._sessions:
+            return {"ok": False, "error": "panel_not_connected_usb"}
+
+        merged = empty_updates()
+        for _ in range(12):
+            part = await self._poll_session(panel_id)
+            merge_updates(merged, part)
+            await asyncio.sleep(0.12)
+
+        hints = inventory_hints_from_updates(merged)
+        return {
+            "ok": True,
+            "mode": "usb",
+            "section_nums": hints.section_nums,
+            "section_count_hint": len(hints.section_nums) if hints.section_nums else None,
+            "device_count_hint": hints.device_count_hint,
+            "pg_count_hint": hints.pg_count_hint,
+            "user_count_hint": None,
+            "note": "hid_state_hints",
+        }
+
+    async def import_config(
+        self,
+        panel_id: str,
+        *,
+        section_count: int | None = None,
+        device_count: int | None = None,
+        user_count: int | None = None,
+        pg_count: int | None = None,
+        device_type: str = "sensor",
+        create_sections: bool = True,
+        create_devices: bool = True,
+        create_users: bool = True,
+        create_pgs: bool = True,
+        assign_devices_to_first_zone: bool = True,
+    ) -> dict[str, Any]:
+        """Tạo zone/device/user/PG placeholder từ số lượng (probe HID khi thiếu)."""
+        panel = self.panel_bus.panels.get(panel_id)
+        if not panel:
+            return {"ok": False, "error": "panel_not_found"}
+
+        probed: dict[str, Any] | None = None
+        need_probe = (
+            section_count is None
+            or device_count is None
+            or pg_count is None
+        )
+        can_probe = self.settings.usb_mock_mode or panel_id in self._sessions
+        if need_probe and can_probe:
+            probed = await self.probe_config(panel_id)
+            if not probed.get("ok"):
+                return probed
+
+        def _resolve(explicit: int | None, hint_key: str, default: int) -> int:
+            if explicit is not None:
+                return explicit
+            if probed and probed.get(hint_key) is not None:
+                return int(probed[hint_key])
+            return default
+
+        resolved_sections = _resolve(section_count, "section_count_hint", 1 if can_probe else 0)
+        resolved_devices = _resolve(device_count, "device_count_hint", 0)
+        resolved_pgs = _resolve(pg_count, "pg_count_hint", 0)
+        resolved_users = user_count if user_count is not None else 0
+
+        if need_probe and not can_probe and (
+            section_count is None or device_count is None or pg_count is None
+        ):
+            return {"ok": False, "error": "import_counts_required"}
+
+        if resolved_sections < 1 and create_sections:
+            resolved_sections = 1
+
+        sections_created = 0
+        sections_skipped = 0
+        devices_created = 0
+        devices_skipped = 0
+        users_created = 0
+        users_skipped = 0
+        pgs_created = 0
+        pgs_skipped = 0
+
+        existing_section_nums = {
+            int(z.get("section_num"))
+            for z in panel.zones.values()
+            if z.get("section_num") is not None
+        }
+
+        if create_sections and resolved_sections >= 1:
+            for num in range(1, resolved_sections + 1):
+                if num in existing_section_nums:
+                    sections_skipped += 1
+                    continue
+                await self.panel_bus.create_zone(
+                    panel_id,
+                    name=f"Section {num}",
+                    section_num=num,
+                )
+                sections_created += 1
+                existing_section_nums.add(num)
+
+        first_zone_id: str | None = None
+        if assign_devices_to_first_zone:
+            for z in sorted(panel.zones.values(), key=lambda x: int(x.get("section_num") or 999)):
+                if int(z.get("section_num") or 0) == 1:
+                    first_zone_id = z["zone_id"]
+                    break
+            if first_zone_id is None and panel.zones:
+                first_zone_id = sorted(
+                    panel.zones.values(), key=lambda x: int(x.get("section_num") or 999)
+                )[0]["zone_id"]
+
+        if create_devices and resolved_devices >= 1:
+            for num in range(1, min(resolved_devices, 99) + 1):
+                global_id = make_device_global_id(panel_id, num)
+                if global_id in panel.devices:
+                    devices_skipped += 1
+                    continue
+                await self.panel_bus.upsert_device(
+                    panel_id,
+                    num,
+                    device_type=device_type or "sensor",
+                    label=f"Địa chỉ {num}",
+                    zone_id=first_zone_id,
+                    update_zone=first_zone_id is not None,
+                )
+                devices_created += 1
+
+        if create_pgs and resolved_pgs >= 1:
+            existing_pg_nums = {int(p.get("pg_num")) for p in panel.pgs.values()}
+            for num in range(1, min(resolved_pgs, 128) + 1):
+                if num in existing_pg_nums:
+                    pgs_skipped += 1
+                    continue
+                await self.panel_bus.create_pg(
+                    panel_id,
+                    pg_num=num,
+                    label=f"PG {num}",
+                    zone_id=first_zone_id,
+                    mode="pulse",
+                )
+                pgs_created += 1
+
+        if create_users and resolved_users >= 1:
+            existing_user_count = len(panel.users)
+            to_create = max(0, resolved_users - existing_user_count)
+            users_skipped = min(existing_user_count, resolved_users)
+            for i in range(existing_user_count + 1, existing_user_count + to_create + 1):
+                await self.panel_bus.create_user(
+                    panel_id,
+                    name=f"User {i}",
+                    code_label="",
+                    permissions=["arm", "disarm"],
+                )
+                users_created += 1
+
+        sync_result: dict[str, Any] | None = None
+        if panel_id in self._sessions or self.settings.usb_mock_mode:
+            sync_result = await self.sync_panel(panel_id)
+
+        await self.event_hub.publish(
+            {
+                "type": "panel_config_imported",
+                "panel_id": panel_id,
+                "detail": (
+                    f"Import: +{sections_created} vùng, +{devices_created} thiết bị, "
+                    f"+{users_created} user, +{pgs_created} PG"
+                ),
+            }
+        )
+
+        return {
+            "ok": True,
+            "sections_created": sections_created,
+            "devices_created": devices_created,
+            "users_created": users_created,
+            "pgs_created": pgs_created,
+            "sections_skipped": sections_skipped,
+            "devices_skipped": devices_skipped,
+            "users_skipped": users_skipped,
+            "pgs_skipped": pgs_skipped,
+            "used": {
+                "section_count": resolved_sections if create_sections else 0,
+                "device_count": resolved_devices if create_devices else 0,
+                "user_count": resolved_users if create_users else 0,
+                "pg_count": resolved_pgs if create_pgs else 0,
+            },
+            "probed": probed,
+            "synced": (sync_result or {}).get("synced"),
+            "note": (
+                "Tạo placeholder theo số lượng. Nhãn/loại thiết bị/PIN user cần chỉnh tay "
+                "(HID không đọc được cấu hình chi tiết như F-Link)."
+            ),
+        }
+
     async def _initial_sync(self, panel_id: str) -> None:
         for _ in range(8):
             await self._poll_session(panel_id)
@@ -445,10 +656,11 @@ class UsbDeviceManager:
         )
         return len(updates)
 
-    async def _poll_session(self, panel_id: str) -> None:
+    async def _poll_session(self, panel_id: str) -> ParsedUpdates:
+        collected = empty_updates()
         session = self._sessions.get(panel_id)
         if not session:
-            return
+            return collected
 
         now = time.monotonic()
         if now - session.last_enable_states_at > 240:
@@ -469,7 +681,9 @@ class UsbDeviceManager:
                 continue
             for packet in split_packets(raw):
                 updates = parse_packet(packet)
+                merge_updates(collected, updates)
                 await self._apply_updates(panel_id, updates)
+        return collected
 
     async def _apply_updates(self, panel_id: str, updates: ParsedUpdates) -> None:
         panel = self.panel_bus.panels.get(panel_id)

@@ -51,6 +51,50 @@ class PanelUpdateIn(BaseModel):
     display_name: str | None = None
 
 
+class PanelProbeConfigOut(BaseModel):
+    ok: bool
+    mode: str | None = None
+    section_nums: list[int] = Field(default_factory=list)
+    section_count_hint: int | None = None
+    device_count_hint: int | None = None
+    pg_count_hint: int | None = None
+    user_count_hint: int | None = None
+    note: str | None = None
+    error: str | None = None
+
+
+class PanelImportConfigIn(BaseModel):
+    """Nhập cấu hình placeholder từ tủ (số lượng như F-Link Initial setup)."""
+
+    section_count: int | None = Field(None, ge=1, le=32)
+    device_count: int | None = Field(None, ge=0, le=99)
+    user_count: int | None = Field(None, ge=0, le=300)
+    pg_count: int | None = Field(None, ge=0, le=128)
+    device_type: str = "sensor"
+    create_sections: bool = True
+    create_devices: bool = True
+    create_users: bool = True
+    create_pgs: bool = True
+    assign_devices_to_first_zone: bool = True
+
+
+class PanelImportConfigOut(BaseModel):
+    ok: bool
+    sections_created: int = 0
+    devices_created: int = 0
+    users_created: int = 0
+    pgs_created: int = 0
+    sections_skipped: int = 0
+    devices_skipped: int = 0
+    users_skipped: int = 0
+    pgs_skipped: int = 0
+    used: dict[str, Any] = Field(default_factory=dict)
+    probed: dict[str, Any] | None = None
+    synced: int | None = None
+    note: str | None = None
+    error: str | None = None
+
+
 class DeviceOut(BaseModel):
     global_id: str
     panel_id: str

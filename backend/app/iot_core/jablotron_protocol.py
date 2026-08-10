@@ -60,6 +60,39 @@ class ParsedUpdates:
     panel_armed: str | None
 
 
+@dataclass
+class InventoryHints:
+    """Heuristic inventory from HID state packets (not full F-Link config)."""
+
+    section_nums: list[int]
+    device_count_hint: int | None
+    pg_count_hint: int | None
+
+
+def empty_updates() -> ParsedUpdates:
+    return ParsedUpdates(device_states={}, section_states={}, pg_states={}, panel_armed=None)
+
+
+def merge_updates(base: ParsedUpdates, other: ParsedUpdates) -> ParsedUpdates:
+    base.device_states.update(other.device_states)
+    base.section_states.update(other.section_states)
+    base.pg_states.update(other.pg_states)
+    if other.panel_armed is not None:
+        base.panel_armed = other.panel_armed
+    return base
+
+
+def inventory_hints_from_updates(updates: ParsedUpdates) -> InventoryHints:
+    section_nums = sorted(updates.section_states.keys())
+    device_nums = [n for n in updates.device_states if 1 <= n <= 99]
+    pg_nums = [n for n in updates.pg_states if n >= 1]
+    return InventoryHints(
+        section_nums=section_nums,
+        device_count_hint=max(device_nums) if device_nums else None,
+        pg_count_hint=max(pg_nums) if pg_nums else None,
+    )
+
+
 def int_to_bytes(value: int) -> bytes:
     return bytes([value & 0xFF])
 
@@ -255,7 +288,7 @@ def _parse_device_number(packet: bytes) -> int:
 
 
 def parse_packet(packet: bytes) -> ParsedUpdates:
-    out = ParsedUpdates(device_states={}, section_states={}, pg_states={}, panel_armed=None)
+    out = empty_updates()
     if not packet:
         return out
 

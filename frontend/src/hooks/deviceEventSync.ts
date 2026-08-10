@@ -38,6 +38,7 @@ export function shouldRefreshOnEvent(event: CmsEvent): boolean {
     event.type === 'device_updated' ||
     event.type === 'device_deleted' ||
     event.type === 'panel_declared' ||
-    event.type === 'panel_deleted'
+    event.type === 'panel_deleted' ||
+    event.type === 'panel_config_imported'
   )
 }

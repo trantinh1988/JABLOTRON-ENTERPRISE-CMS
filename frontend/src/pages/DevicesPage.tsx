@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Pencil, Plus, RefreshCw, Server, Settings2, Trash2 } from 'lucide-react'
+import { Download, Pencil, Plus, RefreshCw, Server, Settings2, Trash2 } from 'lucide-react'
 import {
   createDevice,
   createDevicesBulk,
@@ -15,6 +15,7 @@ import {
   type Panel,
 } from '../api/client'
 import { DeviceTypeIcon } from '../components/DeviceTypeIcon'
+import { ImportPanelConfigCard } from '../components/ImportPanelConfigCard'
 import { Btn, Card, Field, PageHeader, StateDot, inputClass } from '../components/ui'
 import {
   connectionLabel,
@@ -47,6 +48,7 @@ export function DevicesPage({ panels, devices, writeAllowed, mockMode, usbHint, 
   const [busy, setBusy] = useState(false)
   const [filterPanel, setFilterPanel] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [showImport, setShowImport] = useState(false)
 
   const filtered = useMemo(
     () => (filterPanel ? devices.filter((d) => d.panel_id === filterPanel) : devices),
@@ -293,6 +295,18 @@ export function DevicesPage({ panels, devices, writeAllowed, mockMode, usbHint, 
             >
               <Plus className="size-3.5" /> {vi.addDevice}
             </Btn>
+            {panels.length > 0 && (
+              <Btn
+                tone="ghost"
+                disabled={!writeAllowed || busy}
+                onClick={() => {
+                  setShowImport((v) => !v)
+                  clearMessages()
+                }}
+              >
+                <Download className="size-3.5" /> {vi.importPanelConfig}
+              </Btn>
+            )}
             {usbPanel && (
               <Btn tone="ghost" disabled={busy} onClick={() => void handleSyncStates()}>
                 <RefreshCw className="size-3.5" /> {vi.syncDeviceStates}
@@ -314,6 +328,19 @@ export function DevicesPage({ panels, devices, writeAllowed, mockMode, usbHint, 
       )}
       {error && <p className="mb-3 rounded-md bg-danger/10 px-3 py-2 text-xs text-danger">{error}</p>}
       {info && <p className="mb-3 rounded-md bg-ok/10 px-3 py-2 text-xs text-ok">{info}</p>}
+
+      {showImport && (
+        <ImportPanelConfigCard
+          panels={panels}
+          selectedPanelId={filterPanel || undefined}
+          writeAllowed={writeAllowed}
+          busy={busy}
+          onBusy={setBusy}
+          onError={setError}
+          onInfo={setInfo}
+          onDone={onRefresh}
+        />
+      )}
 
       {(creatingPanel || editingPanel) && (
         <Card className="mb-4">

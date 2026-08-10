@@ -18,7 +18,10 @@ from app.schemas.common import (
     GroupActionIn,
     GroupActionOut,
     PanelCreateIn,
+    PanelImportConfigIn,
+    PanelImportConfigOut,
     PanelOut,
+    PanelProbeConfigOut,
     PanelUpdateIn,
     PanelUserCreateIn,
     PanelUserOut,
@@ -116,6 +119,46 @@ async def sync_panel_devices(panel_id: str) -> dict:
         code = str(result.get("error") or "sync_failed")
         raise HTTPException(status_code=409, detail=code)
     return result
+
+
+@router.post("/{panel_id}/probe-config", response_model=PanelProbeConfigOut)
+async def probe_panel_config(panel_id: str) -> PanelProbeConfigOut:
+    """Đọc gợi ý số section/device/PG từ packet trạng thái HID (không phải full F-Link)."""
+    bus = get_panel_bus()
+    _require_panel(bus, panel_id)
+    result = await get_usb_manager().probe_config(panel_id)
+    if not result.get("ok"):
+        code = str(result.get("error") or "probe_failed")
+        raise HTTPException(status_code=409, detail=code)
+    return PanelProbeConfigOut.model_validate(result)
+
+
+@router.post("/{panel_id}/import-config", response_model=PanelImportConfigOut)
+async def import_panel_config(
+    panel_id: str,
+    body: PanelImportConfigIn,
+    _: RequireWriteLicense,
+) -> PanelImportConfigOut:
+    """Nhập cấu hình placeholder (vùng/thiết bị/user/PG) theo số lượng như Initial setup."""
+    bus = get_panel_bus()
+    _require_panel(bus, panel_id)
+    result = await get_usb_manager().import_config(
+        panel_id,
+        section_count=body.section_count,
+        device_count=body.device_count,
+        user_count=body.user_count,
+        pg_count=body.pg_count,
+        device_type=body.device_type,
+        create_sections=body.create_sections,
+        create_devices=body.create_devices,
+        create_users=body.create_users,
+        create_pgs=body.create_pgs,
+        assign_devices_to_first_zone=body.assign_devices_to_first_zone,
+    )
+    if not result.get("ok"):
+        code = str(result.get("error") or "import_failed")
+        raise HTTPException(status_code=409, detail=code)
+    return PanelImportConfigOut.model_validate(result)
 
 
 @router.patch("/{panel_id}", response_model=PanelOut)
