@@ -47,7 +47,7 @@ export const vi = {
   keypadPickPanel: 'Chọn một tủ để điều khiển.',
   keypadNoSections: 'Chưa khai báo section — chỉ điều khiển toàn tủ (FULLY SET).',
   keypadFullySet: 'FULLY SET',
-  keypadEnterCode: 'Nhập mã user trên bàn phím rồi chọn section / lệnh.',
+  keypadEnterCode: 'Nhập mã PIN (4–10 số) trên bàn phím rồi chọn section / lệnh.',
   keypadWrongCode: 'Mã không khớp user đã khai báo.',
   keypadNoPermission: 'User không có quyền thao tác này.',
   keypadOperatorCms: 'CMS',
@@ -287,6 +287,12 @@ export const commandErrorLabel: Record<string, string> = {
   panel_not_connected_usb:
     'Tủ chưa kết nối USB — cắm cáp Link Jablotron và chạy backend có quyền USB (./scripts/start-backend-usb.sh)',
   panel_not_found: 'Không tìm thấy tủ',
+  pin_required: 'Cần nhập mã PIN trên bàn phím trước khi bật/tắt bảo vệ.',
+  wrong_pin_code: 'Mã PIN sai hoặc không đủ quyền trên tủ.',
+  invalid_pin_code: 'Mã PIN không hợp lệ (4–10 chữ số).',
+  invalid_section_num: 'Số section không hợp lệ.',
+  invalid_action: 'Lệnh không hợp lệ.',
+  command_timeout: 'Hết thời gian chờ phản hồi từ tủ.',
   usb_action_not_implemented_use_panel_keypad:
     'Chưa hỗ trợ bật/tắt bảo vệ qua CMS — dùng bàn phím trên tủ',
 }

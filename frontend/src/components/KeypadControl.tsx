@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
   groupAction,
-  updateZone,
   type Device,
   type GroupAction,
   type Panel,
@@ -72,18 +71,26 @@ export function KeypadControl({
 
   const statusTone = panelArmedTone(panel?.armed_state)
 
-  function resolveUser(): { user: PanelUser | null; label: string; error?: string } {
-    if (!users.length) {
-      return { user: null, label: vi.keypadOperatorCms }
-    }
+  function resolveUser(): {
+    user: PanelUser | null
+    label: string
+    code: string
+    error?: string
+  } {
     if (!pin) {
-      return { user: null, label: '', error: vi.keypadEnterCode }
+      return { user: null, label: '', code: '', error: vi.keypadEnterCode }
+    }
+    if (!/^\d{4,10}$/.test(pin)) {
+      return { user: null, label: '', code: '', error: formatCommandError('invalid_pin_code') }
+    }
+    if (!users.length) {
+      return { user: null, label: vi.keypadOperatorCms, code: pin }
     }
     const match = users.find((u) => u.code_label && u.code_label === pin)
     if (!match) {
-      return { user: null, label: '', error: vi.keypadWrongCode }
+      return { user: null, label: '', code: '', error: vi.keypadWrongCode }
     }
-    return { user: match, label: match.name }
+    return { user: match, label: match.name, code: pin }
   }
 
   function userCan(action: GroupAction, user: PanelUser | null): boolean {
@@ -116,7 +123,9 @@ export function KeypadControl({
     setError(null)
     setMessage(null)
     try {
-      const result = await groupAction([panel.panel_id], action, resolved.label)
+      const result = await groupAction([panel.panel_id], action, resolved.label, {
+        code: resolved.code,
+      })
       const failed = result.results.filter((r) => !r.ok)
       if (failed.length) {
         setError(
@@ -172,23 +181,36 @@ export function KeypadControl({
     setMessage(null)
     try {
       const detail = `${resolved.label} · ${zone.name}`
-      const updated = await updateZone(panel.panel_id, zone.zone_id, {
-        armed_state: nextArmed,
-        detail,
+      const result = await groupAction([panel.panel_id], action, detail, {
+        code: resolved.code,
+        section_num: zone.section_num,
       })
-      onZonesChange(zones.map((z) => (z.zone_id === updated.zone_id ? updated : z)))
-      setMessage(
-        `${labelOf(armedStateLabel, nextArmed)} · ${zone.name} · ${resolved.label}`,
-      )
-      onLastAction({
-        at: new Date().toISOString(),
-        panelId: panel.panel_id,
-        target: 'section',
-        zoneName: zone.name,
-        action,
-        userName: resolved.label,
-      })
-      setPin('')
+      const failed = result.results.filter((r) => !r.ok)
+      if (failed.length) {
+        setError(
+          failed
+            .map((f) => `${f.panel_id}: ${formatCommandError(String(f.error ?? ''))}`)
+            .join(', '),
+        )
+      } else {
+        onZonesChange(
+          zones.map((z) =>
+            z.zone_id === zone.zone_id ? { ...z, armed_state: nextArmed } : z,
+          ),
+        )
+        setMessage(
+          `${labelOf(armedStateLabel, nextArmed)} · ${zone.name} · ${resolved.label}`,
+        )
+        onLastAction({
+          at: new Date().toISOString(),
+          panelId: panel.panel_id,
+          target: 'section',
+          zoneName: zone.name,
+          action,
+          userName: resolved.label,
+        })
+        setPin('')
+      }
       await onRefresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))

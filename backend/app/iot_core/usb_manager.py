@@ -11,8 +11,10 @@ from app.iot_core.device_id import make_device_global_id, make_panel_id
 from app.iot_core.event_hub import EventHub, get_event_hub
 from app.iot_core.jablotron_protocol import (
     ParsedUpdates,
+    build_arm_sequence,
     build_init_sequence,
     build_poll_sequence,
+    is_login_error_packet,
     pad_hid_packet,
     parse_packet,
     split_packets,
@@ -156,10 +158,20 @@ class UsbDeviceManager:
         if self._task:
             await asyncio.wait([self._task], timeout=3)
 
-    async def send_action(self, panel_id: str, action: str) -> tuple[bool, str]:
+    async def send_action(
+        self,
+        panel_id: str,
+        action: str,
+        *,
+        code: str | None = None,
+        section_num: int | None = None,
+    ) -> tuple[bool, str]:
         panel = self.panel_bus.panels.get(panel_id)
         if panel is None:
             return False, "panel_not_found"
+
+        if action not in ("arm", "disarm", "partial"):
+            return False, "invalid_action"
 
         if self.settings.usb_mock_mode:
             await asyncio.sleep(0.05)
@@ -169,8 +181,43 @@ class UsbDeviceManager:
         if session is None or hid is None:
             return False, "panel_not_connected_usb"
 
-        # Arm/disarm qua USB thật cần UI control + mã PIN — sẽ bổ sung sau.
-        return False, "usb_action_not_implemented_use_panel_keypad"
+        pin = (code or "").strip()
+        if not pin:
+            return False, "pin_required"
+
+        if section_num is not None:
+            sections = [int(section_num)]
+        elif panel.zones:
+            sections = sorted({int(z["section_num"]) for z in panel.zones.values()})
+        else:
+            sections = [1]
+
+        try:
+            packets = build_arm_sequence(action, pin, sections)
+        except ValueError as exc:
+            return False, str(exc) or "invalid_pin_code"
+
+        return await asyncio.to_thread(self._send_arm_packets, session, packets)
+
+    def _send_arm_packets(self, session: _HidSession, packets: list[bytes]) -> tuple[bool, str]:
+        try:
+            for idx, pkt in enumerate(packets):
+                self._hid_write(session, pkt, raise_on_error=True)
+                # Auth ACK / login-error window after authorisation code packet.
+                if idx == 1:
+                    deadline = time.monotonic() + 1.2
+                    while time.monotonic() < deadline:
+                        raw = self._hid_read(session)
+                        if not raw:
+                            continue
+                        for packet in split_packets(raw):
+                            if is_login_error_packet(packet):
+                                return False, "wrong_pin_code"
+                else:
+                    time.sleep(0.08)
+            return True, "usb_action_ok"
+        except Exception as exc:  # noqa: BLE001
+            return False, f"usb_write_failed:{exc}"
 
     async def _run(self) -> None:
         if self.settings.usb_mock_mode:
@@ -501,15 +548,18 @@ class UsbDeviceManager:
                 }
             )
 
-    def _hid_write(self, session: _HidSession, packet: bytes) -> None:
+    def _hid_write(self, session: _HidSession, packet: bytes, *, raise_on_error: bool = False) -> None:
         padded = pad_hid_packet(packet)
         try:
             session.device.write(b"\x00" + padded)
-        except Exception:
+            return
+        except Exception as first:  # noqa: BLE001
             try:
                 session.device.write(padded)
-            except Exception:
-                pass
+                return
+            except Exception as second:  # noqa: BLE001
+                if raise_on_error:
+                    raise second from first
 
     def _hid_read(self, session: _HidSession) -> bytes:
         try:

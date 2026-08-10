@@ -508,11 +508,18 @@ export async function groupAction(
   panelIds: string[],
   action: GroupAction,
   detail?: string,
+  opts?: { code?: string; section_num?: number },
 ) {
   const res = await fetch('/api/panels/group-action', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ panel_ids: panelIds, action, detail }),
+    body: JSON.stringify({
+      panel_ids: panelIds,
+      action,
+      detail,
+      code: opts?.code,
+      section_num: opts?.section_num,
+    }),
   })
   if (!res.ok) throw new Error(await parseError(res))
   return res.json() as Promise<{

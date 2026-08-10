@@ -14,10 +14,24 @@ PACKET_DEVICE_STATE = b"\x55"
 PACKET_DEVICES_STATES = b"\xd8"
 PACKET_SECTIONS_STATES = b"\x51"
 PACKET_PG_OUTPUTS_STATES = b"\x50"
+PACKET_UI_CONTROL = b"\x80"
 
 COMMAND_HEARTBEAT = b"\x02"
 COMMAND_GET_SECTIONS_AND_PG_OUTPUTS_STATES = b"\x0e"
 COMMAND_ENABLE_DEVICE_STATE_PACKETS = b"\x13"
+
+UI_CONTROL_AUTHORISATION_END = b"\x01"
+UI_CONTROL_AUTHORISATION_CODE = b"\x03"
+UI_CONTROL_MODIFY_SECTION = b"\x0d"
+
+# Base command byte + section_num (1-based). Verified by JA-Link captures.
+SECTION_MODE_DISARM = 0x8F
+SECTION_MODE_ARM_AWAY = 0x9F
+SECTION_MODE_ARM_HOME = 0xAF
+
+CODE_MIN_LENGTH = 4
+CODE_MAX_LENGTH = 10
+DEFAULT_AUTH_PREFIX = "999"
 
 DEVICE_STATE_EVENT_MASK = 0x1F
 TIMEOUT_DEVICE_STATE_PACKETS_MIN = 5
@@ -85,6 +99,70 @@ def build_poll_sequence() -> list[bytes]:
         create_packet_command(COMMAND_HEARTBEAT),
         create_packet_command(COMMAND_GET_SECTIONS_AND_PG_OUTPUTS_STATES),
     ]
+
+
+def create_packet_ui_control(control_type: bytes, data: bytes = b"") -> bytes:
+    return create_packet(PACKET_UI_CONTROL, control_type + data)
+
+
+def create_packet_authorisation_end() -> bytes:
+    return create_packet_ui_control(UI_CONTROL_AUTHORISATION_END)
+
+
+def create_packet_authorisation_code(code: str, prefix: str = DEFAULT_AUTH_PREFIX) -> bytes:
+    """Build login packet. PIN is sent as ASCII digits with a 3-digit user prefix (default 999)."""
+    pin = (code or "").strip()
+    if not CODE_MIN_LENGTH <= len(pin) <= CODE_MAX_LENGTH or not pin.isdigit():
+        raise ValueError("invalid_pin_code")
+    pref = (prefix or DEFAULT_AUTH_PREFIX).strip()
+    if len(pref) != 3 or not pref.isdigit():
+        pref = DEFAULT_AUTH_PREFIX
+    payload = UI_CONTROL_AUTHORISATION_CODE + (pref + pin).encode("ascii")
+    return create_packet(PACKET_UI_CONTROL, payload)
+
+
+def create_packet_modify_section(section_num: int, action: str) -> bytes:
+    """action: arm | disarm | partial"""
+    if section_num < 1 or section_num > 32:
+        raise ValueError("invalid_section_num")
+    if action == "disarm":
+        mode = SECTION_MODE_DISARM
+    elif action == "partial":
+        mode = SECTION_MODE_ARM_HOME
+    elif action == "arm":
+        mode = SECTION_MODE_ARM_AWAY
+    else:
+        raise ValueError("invalid_action")
+    return create_packet_ui_control(UI_CONTROL_MODIFY_SECTION, int_to_bytes(mode + section_num))
+
+
+def build_arm_sequence(
+    action: str,
+    code: str,
+    section_nums: list[int],
+    *,
+    prefix: str = DEFAULT_AUTH_PREFIX,
+) -> list[bytes]:
+    """Authorize with PIN, modify section(s), logout, then refresh section states."""
+    sections = section_nums or [1]
+    packets = [
+        create_packet_authorisation_end(),
+        create_packet_authorisation_code(code, prefix=prefix),
+    ]
+    for section in sections:
+        packets.append(create_packet_modify_section(section, action))
+    packets.append(create_packet_authorisation_end())
+    packets.append(create_packet_command(COMMAND_GET_SECTIONS_AND_PG_OUTPUTS_STATES))
+    return packets
+
+
+def is_login_error_packet(packet: bytes) -> bool:
+    return (
+        len(packet) >= 4
+        and packet[:1] == PACKET_UI_CONTROL
+        and packet[2:3] == b"\x1b"
+        and packet[3:4] == b"\x03"
+    )
 
 
 def split_packets(raw: bytes) -> list[bytes]:

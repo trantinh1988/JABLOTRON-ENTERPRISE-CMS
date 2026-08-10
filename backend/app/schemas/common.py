@@ -190,6 +190,8 @@ class GroupActionIn(BaseModel):
     panel_ids: list[str] = Field(..., min_length=1)
     action: Literal["arm", "disarm", "partial"]
     detail: str | None = Field(None, max_length=256)
+    code: str | None = Field(None, min_length=4, max_length=10, pattern=r"^\d{4,10}$")
+    section_num: int | None = Field(None, ge=1, le=32)
 
 
 class GroupActionOut(BaseModel):

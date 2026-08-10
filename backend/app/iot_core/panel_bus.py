@@ -551,45 +551,61 @@ class PanelBus:
         action: ActionName,
         *,
         detail: str | None = None,
+        code: str | None = None,
+        section_num: int | None = None,
     ) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         for panel_id in panel_ids:
             if panel_id not in self.panels:
                 results.append({"panel_id": panel_id, "ok": False, "error": "panel_not_found"})
                 continue
-            await self._queues[panel_id].put({"action": action, "detail": detail})
-            results.append({"panel_id": panel_id, "ok": True, "queued": True, "action": action})
+            done: asyncio.Future[tuple[bool, str]] = asyncio.get_running_loop().create_future()
+            await self._queues[panel_id].put(
+                {
+                    "action": action,
+                    "detail": detail,
+                    "code": code,
+                    "section_num": section_num,
+                    "done": done,
+                }
+            )
+            try:
+                ok, err = await asyncio.wait_for(done, timeout=12.0)
+            except asyncio.TimeoutError:
+                ok, err = False, "command_timeout"
+            if ok:
+                results.append({"panel_id": panel_id, "ok": True, "action": action})
+            else:
+                results.append({"panel_id": panel_id, "ok": False, "error": err, "action": action})
         return {"action": action, "results": results}
 
     async def _worker(self, panel_id: str) -> None:
         queue = self._queues[panel_id]
         while True:
             cmd = await queue.get()
+            done: asyncio.Future[tuple[bool, str]] | None = cmd.get("done")
             try:
                 action: ActionName = cmd["action"]
                 operator_detail = cmd.get("detail")
+                code = cmd.get("code")
+                section_num = cmd.get("section_num")
                 ok = True
                 detail = "mock_ok"
                 if self._command_sender is not None:
-                    ok, detail = await self._command_sender.send_action(panel_id, action)
+                    ok, detail = await self._command_sender.send_action(
+                        panel_id,
+                        action,
+                        code=code,
+                        section_num=section_num,
+                    )
                 if ok:
                     event_detail = operator_detail or detail
                     armed = {"arm": "armed", "disarm": "disarmed", "partial": "partial"}[action]
                     panel = self.panels[panel_id]
-                    panel.armed_state = armed
-                    if self._persist:
-                        await panel_store.save_panel(panel)
-                    await self.event_hub.publish(
-                        {
-                            "type": "panel_armed",
-                            "panel_id": panel_id,
-                            "armed_state": armed,
-                            "detail": event_detail,
-                        }
-                    )
-                    # Đồng bộ section khi điều khiển toàn tủ (không áp dụng partial).
-                    if action in ("arm", "disarm") and panel.zones:
+                    if section_num is not None and panel.zones:
                         for zone in panel.zones.values():
+                            if int(zone.get("section_num") or 0) != int(section_num):
+                                continue
                             if zone.get("armed_state") == armed:
                                 continue
                             zone["armed_state"] = armed
@@ -604,6 +620,35 @@ class PanelBus:
                                     "detail": event_detail,
                                 }
                             )
+                        await self._sync_panel_armed_from_zones(panel_id)
+                    else:
+                        panel.armed_state = armed
+                        if self._persist:
+                            await panel_store.save_panel(panel)
+                        await self.event_hub.publish(
+                            {
+                                "type": "panel_armed",
+                                "panel_id": panel_id,
+                                "armed_state": armed,
+                                "detail": event_detail,
+                            }
+                        )
+                        if action in ("arm", "disarm") and panel.zones:
+                            for zone in panel.zones.values():
+                                if zone.get("armed_state") == armed:
+                                    continue
+                                zone["armed_state"] = armed
+                                if self._persist:
+                                    await panel_store.save_zone(zone)
+                                await self.event_hub.publish(
+                                    {
+                                        "type": "zone_armed",
+                                        "panel_id": panel_id,
+                                        "zone_id": zone["zone_id"],
+                                        "armed_state": armed,
+                                        "detail": event_detail,
+                                    }
+                                )
                 else:
                     await self.event_hub.publish(
                         {
@@ -613,6 +658,11 @@ class PanelBus:
                             "detail": detail,
                         }
                     )
+                if done is not None and not done.done():
+                    done.set_result((ok, detail))
+            except Exception as exc:  # noqa: BLE001
+                if done is not None and not done.done():
+                    done.set_result((False, str(exc)))
             finally:
                 queue.task_done()
 
