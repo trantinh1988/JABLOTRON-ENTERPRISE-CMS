@@ -12,7 +12,15 @@ import {
 } from '../api/client'
 import { LICENSE_FEATURE_ENABLED } from '../config/features'
 import { useEventStream } from './useEventStream'
-import { applyDeviceEvent, shouldRefreshOnEvent } from './deviceEventSync'
+import {
+  applyDeviceEvent,
+  deviceIdsFromEvent,
+  isDeviceStateEvent,
+  shouldRefreshOnEvent,
+} from './deviceEventSync'
+
+const FULL_REFRESH_MS = 30000
+const FLASH_MS = 1600
 
 export function useCmsData() {
   const [license, setLicense] = useState<LicenseStatus | null>(null)
@@ -22,8 +30,11 @@ export function useCmsData() {
   const [mockMode, setMockMode] = useState<boolean | null>(null)
   const [usbHint, setUsbHint] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [liveSyncAt, setLiveSyncAt] = useState<number | null>(null)
+  const [liveActive, setLiveActive] = useState(false)
+  const [liveFlashIds, setLiveFlashIds] = useState<Set<string>>(() => new Set())
 
-  const { connected, events, lastEvent } = useEventStream(true)
+  const { connected, events, lastEvent, eventSeq } = useEventStream(true)
 
   const refresh = useCallback(async () => {
     try {
@@ -50,14 +61,14 @@ export function useCmsData() {
 
   useEffect(() => {
     void refresh()
-    const id = window.setInterval(() => void refresh(), 10000)
+    const id = window.setInterval(() => void refresh(), FULL_REFRESH_MS)
     return () => window.clearInterval(id)
   }, [refresh])
 
   useEffect(() => {
     if (!lastEvent) return
 
-    if (lastEvent.type === 'device_state' || lastEvent.type === 'devices_state_batch') {
+    if (isDeviceStateEvent(lastEvent)) {
       setDevices((prev) => {
         const patched = applyDeviceEvent(prev, lastEvent)
         if (patched === 'refresh') {
@@ -66,6 +77,16 @@ export function useCmsData() {
         }
         return patched
       })
+      const ids = deviceIdsFromEvent(lastEvent)
+      if (ids.length) {
+        setLiveSyncAt(Date.now())
+        setLiveActive(true)
+        setLiveFlashIds((prev) => {
+          const next = new Set(prev)
+          for (const id of ids) next.add(id)
+          return next
+        })
+      }
     }
 
     if (lastEvent.type === 'panel_armed' && lastEvent.panel_id && lastEvent.armed_state) {
@@ -76,6 +97,8 @@ export function useCmsData() {
             : p,
         ),
       )
+      setLiveSyncAt(Date.now())
+      setLiveActive(true)
     }
 
     if (
@@ -111,7 +134,20 @@ export function useCmsData() {
     if (shouldRefreshOnEvent(lastEvent)) {
       void refresh()
     }
-  }, [lastEvent, refresh])
+  }, [lastEvent, eventSeq, refresh])
+
+  useEffect(() => {
+    if (!liveFlashIds.size) return
+    const id = window.setTimeout(() => setLiveFlashIds(new Set()), FLASH_MS)
+    return () => window.clearTimeout(id)
+  }, [liveFlashIds])
+
+  useEffect(() => {
+    if (!liveSyncAt) return
+    setLiveActive(true)
+    const id = window.setTimeout(() => setLiveActive(false), 8000)
+    return () => window.clearTimeout(id)
+  }, [liveSyncAt])
 
   const writeAllowed = !LICENSE_FEATURE_ENABLED || license?.mode === 'full'
 
@@ -126,6 +162,9 @@ export function useCmsData() {
     connected,
     events,
     lastEvent,
+    liveSyncAt,
+    liveActive,
+    liveFlashIds,
     writeAllowed,
     refresh,
     setDevices,

@@ -30,8 +30,11 @@ class Settings(BaseSettings):
     jablotron_product_id: int = 0x0008
 
     usb_mock_mode: bool = False
+    # Hot-plug / enumerate USB Link
     usb_scan_interval_sec: float = 2.0
-    mock_event_interval_sec: float = 5.0
+    # Poll HID states for connected panels (realtime → WebSocket)
+    usb_poll_interval_sec: float = 0.35
+    mock_event_interval_sec: float = 2.0
 
     @field_validator("jablotron_vendor_id", "jablotron_product_id", mode="before")
     @classmethod

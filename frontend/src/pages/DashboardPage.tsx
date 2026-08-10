@@ -21,6 +21,7 @@ type Props = {
   events: CmsEvent[]
   lastEvent: CmsEvent | null
   loadError: string | null
+  liveActive?: boolean
   onRefresh: () => Promise<void>
 }
 
@@ -32,6 +33,7 @@ export function DashboardPage({
   events,
   lastEvent,
   loadError,
+  liveActive = false,
   onRefresh,
 }: Props) {
   const [activePanelId, setActivePanelId] = useState<string | null>(null)
@@ -129,7 +131,21 @@ export function DashboardPage({
 
   return (
     <div className="mx-auto max-w-[1440px] px-5 py-5">
-      <PageHeader title={vi.navDashboard} hint={vi.keypadPageHint} />
+      <PageHeader
+        title={vi.navDashboard}
+        hint={vi.keypadPageHint}
+        actions={
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[11px] ring-1 ${
+              liveActive ? 'bg-ok/10 text-ok ring-ok/25' : 'bg-steel/10 text-steel ring-steel/20'
+            }`}
+            title={vi.realtimeHint}
+          >
+            <span className={`size-1.5 rounded-full ${liveActive ? 'bg-ok animate-pulse' : 'bg-steel'}`} />
+            {liveActive ? vi.realtimeLive : vi.realtimeIdle}
+          </span>
+        }
+      />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="text-xs font-medium text-steel/60">{vi.filterPanel}</span>

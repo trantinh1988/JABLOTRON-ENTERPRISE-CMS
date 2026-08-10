@@ -14,6 +14,9 @@ export const vi = {
 
   wsLive: 'WS trực tuyến',
   wsDown: 'WS mất kết nối',
+  realtimeLive: 'Realtime tủ',
+  realtimeIdle: 'Chờ dữ liệu tủ',
+  realtimeHint: 'Trạng thái cảm biến cập nhật realtime qua USB → WebSocket.',
   licenseFull: 'Bản quyền đầy đủ',
   licenseReadOnly: 'Chỉ đọc',
   usbMock: 'USB mô phỏng',
@@ -181,7 +184,7 @@ export const vi = {
   panelNotFound: 'Không tìm thấy tủ.',
 
   statusPageTitle: 'Trạng thái theo danh sách',
-  statusPageHint: 'Theo dõi realtime trạng thái tủ và cảm biến.',
+  statusPageHint: 'Theo dõi realtime trạng thái tủ và cảm biến (USB → WebSocket).',
   filterPanel: 'Lọc tủ',
   filterState: 'Lọc trạng thái',
   allStates: 'Tất cả trạng thái',

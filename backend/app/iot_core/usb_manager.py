@@ -4,6 +4,7 @@ import asyncio
 import os
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from app.core.config import Settings, get_settings
@@ -233,22 +234,33 @@ class UsbDeviceManager:
     async def _run_mock(self) -> None:
         import random
 
-        states = ["ok", "open", "alarm"]
+        states = ["ok", "open", "alarm", "tamper"]
         while not self._stop.is_set():
             panels = list(self.panel_bus.panels.keys())
             if panels:
                 panel_id = random.choice(panels)
                 panel = self.panel_bus.panels[panel_id]
+                panel.connection = "mock"
+                panel.last_seen_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                 if panel.devices:
-                    device = random.choice(list(panel.devices.values()))
-                    await self.panel_bus.set_device_state(panel_id, device["device_num"], random.choice(states))
+                    # Flip a few devices each tick so UI can verify realtime WS
+                    sample = list(panel.devices.values())
+                    random.shuffle(sample)
+                    for device in sample[: min(3, len(sample))]:
+                        await self.panel_bus.set_device_state(
+                            panel_id,
+                            device["device_num"],
+                            random.choice(states),
+                        )
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.settings.mock_event_interval_sec)
             except asyncio.TimeoutError:
                 continue
 
     async def _run_hid_real(self) -> None:
+        """Scan USB for hot-plug (slow) + poll HID states for realtime WS (fast)."""
         next_index = 1
+        last_scan_at = 0.0
         while not self._stop.is_set():
             if hid is None:
                 self._devices_found = 0
@@ -265,76 +277,107 @@ class UsbDeviceManager:
                     continue
                 continue
 
-            self._fix_hidraw_permissions()
-            found_paths: set[str] = set()
-            try:
-                scanned = self._enumerate_hid_devices()
-                self._scanned_devices = scanned
-                for dev in scanned:
-                    path_str = dev["path"]
-                    found_paths.add(path_str)
+            now = time.monotonic()
+            need_scan = (
+                not self._sessions
+                or (now - last_scan_at) >= self.settings.usb_scan_interval_sec
+            )
+            if need_scan:
+                next_index = await self._scan_usb_sessions(next_index)
+                last_scan_at = time.monotonic()
+
+            if self._sessions:
+                for panel_id in list(self._sessions.keys()):
                     try:
-                        panel_id = await self._ensure_panel_for_path(path_str, next_index)
-                        if path_str not in self._path_to_panel.values() and panel_id.startswith("PANEL_"):
-                            try:
-                                next_index = max(next_index, int(panel_id.removeprefix("PANEL_")) + 1)
-                            except ValueError:
-                                next_index += 1
-                        await self._ensure_session(panel_id, path_str)
-                        await self._poll_session(panel_id)
+                        await self._poll_session(panel_id, intensive=False)
                     except Exception as exc:  # noqa: BLE001
-                        msg = f"Không mở được USB {path_str}: {exc}"
+                        msg = f"Lỗi poll HID {panel_id}: {exc}"
                         self._set_usb_error(msg)
                         await self.event_hub.publish({"type": "usb_error", "detail": msg})
-                # HID đang mở thì enumerate() thường trả rỗng — giữ session, không ngắt nhầm
-                for session in self._sessions.values():
-                    found_paths.add(session.usb_path)
-                self._devices_found = max(len(found_paths), len(self._sessions), len(scanned))
-                if found_paths and not self._sessions:
-                    self._set_usb_error(
-                        "Thấy thiết bị USB nhưng không mở được HID — kiểm tra quyền (plugdev/udev) "
-                        "hoặc tắt phần mềm Jablotron khác đang chiếm cổng."
+                try:
+                    await asyncio.wait_for(
+                        self._stop.wait(),
+                        timeout=max(0.15, float(self.settings.usb_poll_interval_sec)),
                     )
-                elif found_paths:
-                    self._last_error = None
-                elif time.monotonic() - self._last_scan_log_at > 30:
-                    import logging
-
-                    logging.getLogger("uvicorn.error").warning(
-                        "USB scan: 0 thiết bị Jablotron (VID=0x%04X PID=0x%04X). "
-                        "Host: lsusb | grep -i 16d6 — nếu host thấy mà container không: "
-                        "dùng ./scripts/start-backend-usb.sh + docker-compose.usb-host.yml",
-                        self.settings.jablotron_vendor_id,
-                        self.settings.jablotron_product_id,
+                except asyncio.TimeoutError:
+                    continue
+            else:
+                try:
+                    await asyncio.wait_for(
+                        self._stop.wait(),
+                        timeout=self.settings.usb_scan_interval_sec,
                     )
-                    self._last_scan_log_at = time.monotonic()
-            except Exception as exc:  # noqa: BLE001
-                self._devices_found = 0
-                self._scanned_devices = []
-                self._set_usb_error(str(exc))
-                await self.event_hub.publish({"type": "usb_error", "detail": str(exc)})
+                except asyncio.TimeoutError:
+                    continue
 
-            for panel_id, session in list(self._sessions.items()):
-                if session.usb_path not in found_paths:
-                    self._close_session(session)
-                    self._sessions.pop(panel_id, None)
-                    stale_paths = [p for p, pid in self._path_to_panel.items() if pid == panel_id]
-                    for stale in stale_paths:
-                        del self._path_to_panel[stale]
-                    panel = self.panel_bus.panels.get(panel_id)
-                    if panel:
-                        panel.connection = "disconnected"
-                        panel.usb_path = None
-                        if self.panel_bus._persist:
-                            await panel_store.save_panel(panel)
-                        await self.event_hub.publish(
-                            {"type": "panel_disconnected", "panel_id": panel_id}
-                        )
+    async def _scan_usb_sessions(self, next_index: int) -> int:
+        """Enumerate Link devices, open sessions, drop stale paths."""
+        self._fix_hidraw_permissions()
+        found_paths: set[str] = set()
+        try:
+            scanned = self._enumerate_hid_devices()
+            self._scanned_devices = scanned
+            for dev in scanned:
+                path_str = dev["path"]
+                found_paths.add(path_str)
+                try:
+                    panel_id = await self._ensure_panel_for_path(path_str, next_index)
+                    if path_str not in self._path_to_panel.values() and panel_id.startswith("PANEL_"):
+                        try:
+                            next_index = max(next_index, int(panel_id.removeprefix("PANEL_")) + 1)
+                        except ValueError:
+                            next_index += 1
+                    await self._ensure_session(panel_id, path_str)
+                except Exception as exc:  # noqa: BLE001
+                    msg = f"Không mở được USB {path_str}: {exc}"
+                    self._set_usb_error(msg)
+                    await self.event_hub.publish({"type": "usb_error", "detail": msg})
+            # HID đang mở thì enumerate() thường trả rỗng — giữ session, không ngắt nhầm
+            for session in self._sessions.values():
+                found_paths.add(session.usb_path)
+            self._devices_found = max(len(found_paths), len(self._sessions), len(scanned))
+            if found_paths and not self._sessions:
+                self._set_usb_error(
+                    "Thấy thiết bị USB nhưng không mở được HID — kiểm tra quyền (plugdev/udev) "
+                    "hoặc tắt phần mềm Jablotron khác đang chiếm cổng."
+                )
+            elif found_paths:
+                self._last_error = None
+            elif time.monotonic() - self._last_scan_log_at > 30:
+                import logging
 
-            try:
-                await asyncio.wait_for(self._stop.wait(), timeout=self.settings.usb_scan_interval_sec)
-            except asyncio.TimeoutError:
-                continue
+                logging.getLogger("uvicorn.error").warning(
+                    "USB scan: 0 thiết bị Jablotron (VID=0x%04X PID=0x%04X). "
+                    "Host: lsusb | grep -i 16d6 — nếu host thấy mà container không: "
+                    "dùng ./scripts/start-backend-usb.sh + docker-compose.usb-host.yml",
+                    self.settings.jablotron_vendor_id,
+                    self.settings.jablotron_product_id,
+                )
+                self._last_scan_log_at = time.monotonic()
+        except Exception as exc:  # noqa: BLE001
+            self._devices_found = 0
+            self._scanned_devices = []
+            self._set_usb_error(str(exc))
+            await self.event_hub.publish({"type": "usb_error", "detail": str(exc)})
+            return next_index
+
+        for panel_id, session in list(self._sessions.items()):
+            if session.usb_path not in found_paths:
+                self._close_session(session)
+                self._sessions.pop(panel_id, None)
+                stale_paths = [p for p, pid in self._path_to_panel.items() if pid == panel_id]
+                for stale in stale_paths:
+                    del self._path_to_panel[stale]
+                panel = self.panel_bus.panels.get(panel_id)
+                if panel:
+                    panel.connection = "disconnected"
+                    panel.usb_path = None
+                    if self.panel_bus._persist:
+                        await panel_store.save_panel(panel)
+                    await self.event_hub.publish(
+                        {"type": "panel_disconnected", "panel_id": panel_id}
+                    )
+        return next_index
 
     def _fix_hidraw_permissions(self) -> None:
         """Hot-plug hidraw nodes often get root-only perms; fix each scan."""
@@ -428,7 +471,7 @@ class UsbDeviceManager:
         applied_total = 0
         seen_nums: set[int] = set()
         for _ in range(14):
-            part = await self._poll_session(panel_id)
+            part = await self._poll_session(panel_id, intensive=True)
             applied_total += len(part.device_states)
             seen_nums.update(part.device_states.keys())
             await asyncio.sleep(0.12)
@@ -471,7 +514,7 @@ class UsbDeviceManager:
 
         merged = empty_updates()
         for _ in range(12):
-            part = await self._poll_session(panel_id)
+            part = await self._poll_session(panel_id, intensive=True)
             merge_updates(merged, part)
             await asyncio.sleep(0.12)
 
@@ -663,7 +706,7 @@ class UsbDeviceManager:
 
     async def _initial_sync(self, panel_id: str) -> None:
         for _ in range(8):
-            await self._poll_session(panel_id)
+            await self._poll_session(panel_id, intensive=True)
             await asyncio.sleep(0.1)
         await self._publish_declared_states_snapshot(panel_id)
 
@@ -684,7 +727,7 @@ class UsbDeviceManager:
         )
         return len(updates)
 
-    async def _poll_session(self, panel_id: str) -> ParsedUpdates:
+    async def _poll_session(self, panel_id: str, *, intensive: bool = False) -> ParsedUpdates:
         collected = empty_updates()
         session = self._sessions.get(panel_id)
         if not session:
@@ -699,14 +742,16 @@ class UsbDeviceManager:
         else:
             for pkt in build_poll_sequence():
                 self._hid_write(session, pkt)
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.02 if not intensive else 0.05)
 
-        await asyncio.sleep(0.06)
+        await asyncio.sleep(0.04 if not intensive else 0.06)
         batch: list[bytes] = []
-        for _ in range(24):
+        read_rounds = 28 if intensive else 12
+        idle_sleep = 0.02 if intensive else 0.01
+        for _ in range(read_rounds):
             raw = self._hid_read(session)
             if not raw:
-                await asyncio.sleep(0.02)
+                await asyncio.sleep(idle_sleep)
                 continue
             batch.extend(split_packets(raw))
         # Activity bitmap first, then 0x55 events (TMP/alarm override ACT/OK).
@@ -714,6 +759,13 @@ class UsbDeviceManager:
             updates = parse_packet(packet)
             merge_updates(collected, updates)
             await self._apply_updates(panel_id, updates)
+
+        if batch:
+            panel = self.panel_bus.panels.get(panel_id)
+            if panel:
+                panel.last_seen_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                if panel.connection != "usb":
+                    panel.connection = "usb"
         return collected
 
     async def _apply_updates(self, panel_id: str, updates: ParsedUpdates) -> None:

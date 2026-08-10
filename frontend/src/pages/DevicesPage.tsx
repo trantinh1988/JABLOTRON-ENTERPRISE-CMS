@@ -31,6 +31,9 @@ type Props = {
   writeAllowed: boolean
   mockMode: boolean | null
   usbHint: string | null
+  wsConnected?: boolean
+  liveActive?: boolean
+  liveFlashIds?: Set<string>
   onRefresh: () => Promise<void>
 }
 
@@ -38,7 +41,17 @@ const TYPES = Object.keys(deviceTypeLabel)
 
 type FormMode = 'device' | 'panel' | null
 
-export function DevicesPage({ panels, devices, writeAllowed, mockMode, usbHint, onRefresh }: Props) {
+export function DevicesPage({
+  panels,
+  devices,
+  writeAllowed,
+  mockMode,
+  usbHint,
+  wsConnected = false,
+  liveActive = false,
+  liveFlashIds,
+  onRefresh,
+}: Props) {
   const [editing, setEditing] = useState<Device | null>(null)
   const [editingPanel, setEditingPanel] = useState<Panel | null>(null)
   const [formMode, setFormMode] = useState<FormMode>(null)
@@ -317,6 +330,23 @@ export function DevicesPage({ panels, devices, writeAllowed, mockMode, usbHint, 
                 <RefreshCw className="size-3.5" /> {vi.syncDeviceStates}
               </Btn>
             )}
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[11px] ring-1 ${
+                liveActive
+                  ? 'bg-ok/10 text-ok ring-ok/25'
+                  : wsConnected
+                    ? 'bg-steel/10 text-steel ring-steel/20'
+                    : 'bg-danger/10 text-danger ring-danger/20'
+              }`}
+              title={vi.realtimeHint}
+            >
+              <span
+                className={`size-1.5 rounded-full ${
+                  liveActive ? 'bg-ok animate-pulse' : wsConnected ? 'bg-steel' : 'bg-danger'
+                }`}
+              />
+              {liveActive ? vi.realtimeLive : wsConnected ? vi.realtimeIdle : vi.wsDown}
+            </span>
           </div>
         }
       />
@@ -690,9 +720,13 @@ export function DevicesPage({ panels, devices, writeAllowed, mockMode, usbHint, 
             <tbody>
               {filtered.map((d) => (
                 <tr
-                  key={d.global_id}
+                  key={`${d.global_id}-${d.state}`}
                   className={`border-b border-line/60 hover:bg-mist/30 ${
-                    selected.has(d.global_id) ? 'bg-accent/5' : ''
+                    liveFlashIds?.has(d.global_id)
+                      ? 'live-flash'
+                      : selected.has(d.global_id)
+                        ? 'bg-accent/5'
+                        : ''
                   }`}
                 >
                   <td className="px-3 py-2.5">

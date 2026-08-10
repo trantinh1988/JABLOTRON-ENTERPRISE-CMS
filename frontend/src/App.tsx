@@ -21,6 +21,7 @@ export default function App() {
             <AppShell
               license={data.license}
               wsConnected={data.connected}
+              liveActive={data.liveActive}
               mockMode={data.mockMode}
             />
           }
@@ -36,6 +37,7 @@ export default function App() {
                 events={data.events}
                 lastEvent={data.lastEvent}
                 loadError={data.loadError}
+                liveActive={data.liveActive}
                 onRefresh={data.refresh}
               />
             }
@@ -49,6 +51,9 @@ export default function App() {
                 writeAllowed={data.writeAllowed}
                 mockMode={data.mockMode}
                 usbHint={data.usbHint}
+                wsConnected={data.connected}
+                liveActive={data.liveActive}
+                liveFlashIds={data.liveFlashIds}
                 onRefresh={data.refresh}
               />
             }
@@ -71,6 +76,9 @@ export default function App() {
               <StatusPage
                 panels={data.panels}
                 devices={data.devices}
+                wsConnected={data.connected}
+                liveActive={data.liveActive}
+                liveFlashIds={data.liveFlashIds}
                 onRefresh={data.refresh}
               />
             }

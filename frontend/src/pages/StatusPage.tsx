@@ -15,10 +15,20 @@ import {
 type Props = {
   panels: Panel[]
   devices: Device[]
+  wsConnected?: boolean
+  liveActive?: boolean
+  liveFlashIds?: Set<string>
   onRefresh: () => Promise<void>
 }
 
-export function StatusPage({ panels, devices, onRefresh }: Props) {
+export function StatusPage({
+  panels,
+  devices,
+  wsConnected = false,
+  liveActive = false,
+  liveFlashIds,
+  onRefresh,
+}: Props) {
   const [panelFilter, setPanelFilter] = useState('')
   const [stateFilter, setStateFilter] = useState('')
   const [q, setQ] = useState('')
@@ -49,16 +59,30 @@ export function StatusPage({ panels, devices, onRefresh }: Props) {
         title={vi.statusPageTitle}
         hint={vi.statusPageHint}
         actions={
-          <Btn
-            tone="ghost"
-            disabled={busy}
-            onClick={() => {
-              setBusy(true)
-              void onRefresh().finally(() => setBusy(false))
-            }}
-          >
-            <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} /> {vi.refresh}
-          </Btn>
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 font-mono text-[11px] ring-1 ${
+                liveActive
+                  ? 'bg-ok/10 text-ok ring-ok/25'
+                  : wsConnected
+                    ? 'bg-steel/10 text-steel ring-steel/20'
+                    : 'bg-danger/10 text-danger ring-danger/20'
+              }`}
+            >
+              <span className={`size-1.5 rounded-full ${liveActive ? 'bg-ok animate-pulse' : wsConnected ? 'bg-steel' : 'bg-danger'}`} />
+              {liveActive ? vi.realtimeLive : wsConnected ? vi.realtimeIdle : vi.wsDown}
+            </span>
+            <Btn
+              tone="ghost"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true)
+                void onRefresh().finally(() => setBusy(false))
+              }}
+            >
+              <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} /> {vi.refresh}
+            </Btn>
+          </div>
         }
       />
 
@@ -140,13 +164,15 @@ export function StatusPage({ panels, devices, onRefresh }: Props) {
             <tbody>
               {filtered.map((d) => (
                 <tr
-                  key={d.global_id}
+                  key={`${d.global_id}-${d.state}`}
                   className={`border-b border-line/60 ${
-                    d.state === 'alarm' || d.state === 'tamper' || d.state === 'fault'
-                      ? 'bg-danger/5'
-                      : d.state === 'open'
-                        ? 'bg-warn/5'
-                        : 'hover:bg-mist/30'
+                    liveFlashIds?.has(d.global_id)
+                      ? 'live-flash'
+                      : d.state === 'alarm' || d.state === 'tamper' || d.state === 'fault'
+                        ? 'bg-danger/5'
+                        : d.state === 'open'
+                          ? 'bg-warn/5'
+                          : 'hover:bg-mist/30'
                   }`}
                 >
                   <td className="px-4 py-2.5">

@@ -14,6 +14,7 @@ import { vi } from '../i18n/vi'
 type Props = {
   license: LicenseStatus | null
   wsConnected: boolean
+  liveActive?: boolean
   mockMode: boolean | null
 }
 
@@ -28,7 +29,7 @@ const nav = [
     : []),
 ]
 
-export function AppShell({ license, wsConnected, mockMode }: Props) {
+export function AppShell({ license, wsConnected, liveActive = false, mockMode }: Props) {
   const mode = license?.mode ?? 'read-only'
   const full = mode === 'full'
 
@@ -66,6 +67,11 @@ export function AppShell({ license, wsConnected, mockMode }: Props) {
 
         <div className="mt-4 space-y-1.5 border-t border-line pt-3">
           <Chip label={wsConnected ? vi.wsLive : vi.wsDown} tone={wsConnected ? 'ok' : 'danger'} />
+          <Chip
+            label={liveActive ? vi.realtimeLive : vi.realtimeIdle}
+            tone={liveActive ? 'ok' : 'neutral'}
+            pulse={liveActive}
+          />
           {LICENSE_FEATURE_ENABLED && (
             <Chip label={full ? vi.licenseFull : vi.licenseReadOnly} tone={full ? 'ok' : 'warn'} />
           )}
@@ -85,9 +91,11 @@ export function AppShell({ license, wsConnected, mockMode }: Props) {
 function Chip({
   label,
   tone,
+  pulse = false,
 }: {
   label: string
   tone: 'ok' | 'warn' | 'danger' | 'neutral'
+  pulse?: boolean
 }) {
   const styles = {
     ok: 'bg-ok/10 text-ok ring-ok/20',
@@ -109,7 +117,7 @@ function Chip({
               : tone === 'danger'
                 ? 'bg-danger'
                 : 'bg-steel/50'
-        }`}
+        } ${pulse ? 'animate-pulse' : ''}`}
       />
       {label}
     </span>
