@@ -15,6 +15,8 @@ from app.schemas.common import (
     DeviceCreateIn,
     DeviceOut,
     DeviceUpdateIn,
+    AckAlwaysAlarmIn,
+    AckAlwaysAlarmOut,
     GroupActionIn,
     GroupActionOut,
     PanelCreateIn,
@@ -38,6 +40,7 @@ router = APIRouter(prefix="/api/panels", tags=["panels"])
 
 
 def _panel_out(bus, panel) -> PanelOut:
+    usb = get_usb_manager()
     data = {
         "panel_id": panel.panel_id,
         "display_name": panel.display_name,
@@ -49,6 +52,8 @@ def _panel_out(bus, panel) -> PanelOut:
         "zone_count": len(panel.zones),
         "user_count": len(panel.users),
         "pg_count": len(panel.pgs),
+        "has_stream_code": bool(getattr(panel, "stream_code", "")),
+        "device_stream_ok": usb.is_device_stream_ok(panel.panel_id),
     }
     return PanelOut.model_validate(data)
 
@@ -167,11 +172,60 @@ async def update_panel(panel_id: str, body: PanelUpdateIn, _: RequireWriteLicens
     if panel_id not in bus.panels:
         raise HTTPException(status_code=404, detail=f"Không tìm thấy tủ: {panel_id}")
     panel = await bus.ensure_panel(panel_id, display_name=body.display_name)
+    if body.stream_code is not None:
+        code = body.stream_code.strip()
+        if code:
+            # Validate wire format early (digits or n*pin)
+            try:
+                from app.iot_core.jablotron_protocol import create_packet_authorisation_code
+
+                create_packet_authorisation_code(code)
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+        panel.stream_code = code
+        if bus._persist:
+            from app.iot_core import panel_store
+
+            await panel_store.save_panel(panel)
+        if code:
+            # Activate stream immediately (not only on next poll).
+            result = await get_usb_manager().activate_device_stream(
+                panel_id, code, persist=False
+            )
+            if not result.get("ok"):
+                # Still keep saved code; poll loop will retry.
+                await get_usb_manager().request_device_stream_refresh(panel_id)
+        else:
+            await get_usb_manager().request_device_stream_refresh(panel_id)
     await bus.event_hub.publish(
         {
             "type": "panel_updated",
             "panel_id": panel_id,
             "detail": panel.display_name,
+        }
+    )
+    return _panel_out(bus, panel)
+
+
+@router.post("/{panel_id}/device-stream/activate", response_model=PanelOut)
+async def activate_panel_device_stream(panel_id: str, _: RequireWriteLicense) -> PanelOut:
+    """Re-auth + enable 0x55/0xd8 using the stored Admin/Service stream_code."""
+    bus = get_panel_bus()
+    panel = _require_panel(bus, panel_id)
+    code = (getattr(panel, "stream_code", "") or "").strip()
+    if not code:
+        raise HTTPException(status_code=409, detail="stream_code_required")
+    result = await get_usb_manager().activate_device_stream(panel_id, code, persist=False)
+    if not result.get("ok"):
+        err = str(result.get("error") or "activate_failed")
+        await get_usb_manager().request_device_stream_refresh(panel_id)
+        if err in ("pin_required", "invalid_pin_code", "panel_not_connected_usb"):
+            raise HTTPException(status_code=409, detail=err)
+    await bus.event_hub.publish(
+        {
+            "type": "panel_updated",
+            "panel_id": panel_id,
+            "detail": "device_stream_activated",
         }
     )
     return _panel_out(bus, panel)
@@ -368,6 +422,34 @@ async def group_action(
     return GroupActionOut.model_validate(result)
 
 
+@router.post("/{panel_id}/ack-always-alarms", response_model=AckAlwaysAlarmOut)
+async def ack_panel_always_alarms(
+    panel_id: str,
+    body: AckAlwaysAlarmIn,
+    _: RequireWriteLicense,
+) -> AckAlwaysAlarmOut:
+    """Tắt mọi Báo động 24h/Fire trên tủ, hoặc danh sách global_ids."""
+    bus = get_panel_bus()
+    _require_panel(bus, panel_id)
+    nums: list[int] | None = None
+    if body.global_ids:
+        nums = []
+        for gid in body.global_ids:
+            device = bus.get_device(gid)
+            if not device or str(device.get("panel_id")) != panel_id:
+                continue
+            try:
+                nums.append(int(device.get("device_num")))
+            except (TypeError, ValueError):
+                continue
+        if not nums:
+            return AckAlwaysAlarmOut(ok=True, silenced=[], states={})
+    result = await get_usb_manager().ack_always_alarms(
+        panel_id, device_nums=nums, code=body.code
+    )
+    return AckAlwaysAlarmOut.model_validate(result)
+
+
 # --- Devices (cross-panel) ---
 
 devices_router = APIRouter(prefix="/api/devices", tags=["devices"])
@@ -405,12 +487,18 @@ async def create_device(body: DeviceCreateIn, _: RequireWriteLicense) -> DeviceO
             body.device_num,
             device_type=body.device_type,
             label=body.label or None,
+            model=body.model,
+            link=body.link,
+            disable=body.disable,
             zone_id=body.zone_id,
             update_zone=body.zone_id is not None,
             map_id=body.map_id,
             map_x=body.map_x,
             map_y=body.map_y,
             update_map=body.map_id is not None or body.map_x is not None,
+            map_icon=body.map_icon,
+            map_icon_size=body.map_icon_size,
+            reaction=body.reaction,
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
@@ -468,6 +556,14 @@ async def create_devices_bulk(body: DeviceBulkCreateIn, _: RequireWriteLicense) 
             num,
             device_type=body.device_type,
             label=label,
+            model=body.model,
+            link=body.link,
+            disable=body.disable,
+            zone_id=body.zone_id,
+            update_zone=body.zone_id is not None,
+            map_icon=body.map_icon,
+            map_icon_size=body.map_icon_size,
+            reaction=body.reaction,
         )
         created.append(DeviceOut.model_validate(device))
     if created:
@@ -498,6 +594,24 @@ async def get_device(global_id: str) -> DeviceOut:
     return DeviceOut.model_validate(device)
 
 
+@devices_router.post("/{global_id}/ack-alarm", response_model=AckAlwaysAlarmOut)
+async def ack_device_always_alarm(global_id: str, _: RequireWriteLicense) -> AckAlwaysAlarmOut:
+    """Tắt Báo động CMS cho một zone 24h/Fire (cửa còn mở → ACT)."""
+    bus = get_panel_bus()
+    device = bus.get_device(global_id)
+    if not device:
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy thiết bị: {global_id}")
+    try:
+        num = int(device.get("device_num"))
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Thiết bị không có địa chỉ") from exc
+    result = await get_usb_manager().ack_always_alarms(
+        str(device["panel_id"]),
+        device_nums=[num],
+    )
+    return AckAlwaysAlarmOut.model_validate(result)
+
+
 @devices_router.patch("/{global_id}", response_model=DeviceOut)
 async def update_device(global_id: str, body: DeviceUpdateIn, _: RequireWriteLicense) -> DeviceOut:
     bus = get_panel_bus()
@@ -513,6 +627,9 @@ async def update_device(global_id: str, body: DeviceUpdateIn, _: RequireWriteLic
             global_id,
             device_type=fields.get("device_type"),
             label=fields.get("label"),
+            model=fields.get("model"),
+            link=fields.get("link"),
+            disable=fields.get("disable"),
             zone_id=fields.get("zone_id"),
             update_zone=update_zone and not clear_zone,
             clear_zone=clear_zone,
@@ -521,6 +638,9 @@ async def update_device(global_id: str, body: DeviceUpdateIn, _: RequireWriteLic
             map_y=fields.get("map_y"),
             update_map=update_map and not clear_map,
             clear_map=clear_map,
+            map_icon=fields.get("map_icon"),
+            map_icon_size=fields.get("map_icon_size"),
+            reaction=fields.get("reaction"),
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e

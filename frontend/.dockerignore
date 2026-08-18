@@ -4,3 +4,7 @@ dist
 *.md
 .vscode
 .DS_Store
+coverage
+*.log
+.env
+.env.*

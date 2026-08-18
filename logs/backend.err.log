@@ -1,0 +1,17 @@
+INFO:     Started server process [23624]
+INFO:     Waiting for application startup.
+INFO:     USB manager started (mock=False). Quét n\u1ec1n m\u1ed7i 2.0s — xem /api/usb/status
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8010 (Press CTRL+C to quit)
+INFO:     127.0.0.1:56764 - "WebSocket /ws/events" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:54743 - "WebSocket /ws/events" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:50328 - "WebSocket /ws/events" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:51877 - "WebSocket /ws/events" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:50884 - "WebSocket /ws/events" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:57162 - "WebSocket /ws/events" [accepted]
+INFO:     connection open

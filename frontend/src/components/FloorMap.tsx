@@ -1,7 +1,24 @@
 import { useMemo } from 'react'
 import { DeviceMapGlyph } from './DeviceTypeIcon'
 import type { Device, Panel } from '../api/client'
-import { deviceStateLabel, deviceTypeLabel, labelOf, vi } from '../i18n/vi'
+import {
+  clampMapIconSize,
+  formatMapDeviceCaption,
+  mapStatusColor,
+  mapStatusGlow,
+  mapStatusShouldPulse,
+  MAP_STATUS_LEGEND,
+  resolveDeviceIconKey,
+} from '../lib/deviceIconLibrary'
+import {
+  deviceIconLabel,
+  deviceStateLabel,
+  deviceTypeLabel,
+  effectiveDeviceStatus,
+  labelOf,
+  vi,
+} from '../i18n/vi'
+import { MapReactionChip } from './ReactionBadge'
 
 type Props = {
   panels: Panel[]
@@ -24,8 +41,12 @@ export function FloorMapView({ panels, devices, focusPanelId }: Props) {
     })
   }, [devices, focusPanelId])
 
-  const alarmCount = visible.filter((d) => d.state === 'alarm').length
-  const openCount = visible.filter((d) => d.state === 'open').length
+  const alarmCount = visible.filter(
+    (d) => effectiveDeviceStatus(d.state, d.disable) === 'alarm',
+  ).length
+  const openCount = visible.filter(
+    (d) => effectiveDeviceStatus(d.state, d.disable) === 'open',
+  ).length
 
   return (
     <section className="panel-card flex min-h-[420px] flex-1 flex-col overflow-hidden">
@@ -74,34 +95,76 @@ export function FloorMapView({ panels, devices, focusPanelId }: Props) {
           </text>
 
           {visible.map((d) => {
-            const color =
-              d.state === 'alarm' ? '#ef5350' : d.state === 'open' ? '#e3a227' : '#3dcb7a'
-            const pulse = d.state === 'alarm'
+            const status = effectiveDeviceStatus(d.state, d.disable)
+            const color = mapStatusColor(status)
+            const glow = mapStatusGlow(status)
+            const pulse = mapStatusShouldPulse(status)
+            const isAlarm = status === 'alarm'
+            const icon = resolveDeviceIconKey(d)
+            const size = clampMapIconSize(d.map_icon_size)
+            const ringR = size * 1.14
+            const strokeW = Math.max(0.22, size * 0.28)
+            const pulseMax = isAlarm ? size * 3.6 : size * 2.2
             return (
               <g key={d.global_id} transform={`translate(${clamp(d.x, 4, 96)} ${clamp(d.y, 6, 64)})`}>
+                <circle r={size * 1.52} fill="#ffffff" opacity={0.88} />
+                <circle r={size * 1.34} fill={glow} />
                 {pulse && (
-                  <circle r="3.2" fill={color} opacity="0.2">
-                    <animate attributeName="r" values="2.2;4.2;2.2" dur="1.4s" repeatCount="indefinite" />
-                    <animate
-                      attributeName="opacity"
-                      values="0.35;0.05;0.35"
-                      dur="1.4s"
-                      repeatCount="indefinite"
-                    />
-                  </circle>
+                  <>
+                    <circle r={size * 1.2} fill={color} opacity={isAlarm ? 0.4 : 0.28}>
+                      <animate
+                        attributeName="r"
+                        values={`${size};${pulseMax};${size}`}
+                        dur={isAlarm ? '0.75s' : '1.2s'}
+                        repeatCount="indefinite"
+                      />
+                      <animate
+                        attributeName="opacity"
+                        values={isAlarm ? '0.55;0.04;0.55' : '0.4;0.05;0.4'}
+                        dur={isAlarm ? '0.75s' : '1.2s'}
+                        repeatCount="indefinite"
+                      />
+                    </circle>
+                    {isAlarm && (
+                      <circle r={size * 1.5} fill="none" stroke={color} strokeWidth={strokeW}>
+                        <animate
+                          attributeName="r"
+                          values={`${size * 1.4};${size * 4};${size * 1.4}`}
+                          dur="1.05s"
+                          repeatCount="indefinite"
+                        />
+                        <animate attributeName="opacity" values="0.9;0;0.9" dur="1.05s" repeatCount="indefinite" />
+                      </circle>
+                    )}
+                  </>
                 )}
-                <DeviceMapGlyph type={d.device_type} color={color} size={1.9} />
+                <circle r={ringR * 0.92} fill="#0b1220" opacity={0.35} />
+                <circle r={ringR} fill="none" stroke={color} strokeWidth={strokeW} />
+                <DeviceMapGlyph icon={icon} color={color} size={size} />
+                <MapReactionChip reaction={d.reaction} size={size} />
+                <circle cx={size * 0.75} cy={size * 0.75} r={size * 0.38 + strokeW * 0.35} fill="#ffffff" />
+                <circle cx={size * 0.75} cy={size * 0.75} r={size * 0.38} fill={color} />
                 <text
-                  y="3.6"
+                  y={size + Math.max(1.5, size * 0.9)}
                   textAnchor="middle"
-                  fill="rgba(232,238,244,0.85)"
-                  style={{ fontSize: 1.7, fontFamily: 'IBM Plex Mono' }}
+                  fill="#ffffff"
+                  style={{
+                    fontSize: Math.max(1.05, size * 0.62),
+                    fontFamily: 'IBM Plex Sans, system-ui, sans-serif',
+                    fontWeight: 700,
+                    paintOrder: 'stroke',
+                  }}
+                  stroke="#0a0f16"
+                  strokeWidth={Math.max(0.35, size * 0.2)}
                 >
-                  {d.device_id}
+                  {formatMapDeviceCaption(d)}
                 </text>
                 <title>
-                  {d.global_id} · {d.label} · {labelOf(deviceTypeLabel, d.device_type)} ·{' '}
-                  {labelOf(deviceStateLabel, d.state)}
+                  {formatMapDeviceCaption(d)} · {d.global_id} ·{' '}
+                  {labelOf(deviceIconLabel, icon) || labelOf(deviceTypeLabel, d.device_type)}
+                  {d.model ? ` · ${d.model}` : ''}
+                  {d.link === 'rf' ? ' · RF' : d.link === 'bus' ? ' · Bus' : ''} ·{' '}
+                  {labelOf(deviceStateLabel, status)}
                 </title>
               </g>
             )
@@ -116,16 +179,16 @@ export function FloorMapView({ panels, devices, focusPanelId }: Props) {
 
 function Legend() {
   return (
-    <div className="pointer-events-none absolute bottom-3 left-3 flex gap-3 rounded-md bg-panel/90 px-2.5 py-1.5 font-mono text-[10px] text-steel/80 ring-1 ring-line">
-      <span className="inline-flex items-center gap-1">
-        <i className="size-2 rounded-full bg-ok" /> {vi.legendOk}
-      </span>
-      <span className="inline-flex items-center gap-1">
-        <i className="size-2 rounded-full bg-warn" /> {vi.legendOpen}
-      </span>
-      <span className="inline-flex items-center gap-1">
-        <i className="size-2 rounded-full bg-danger" /> {vi.legendAlarm}
-      </span>
+    <div className="pointer-events-none absolute bottom-3 left-3 flex flex-wrap gap-2.5 rounded-md bg-panel/90 px-2.5 py-1.5 font-mono text-[10px] text-steel/80 ring-1 ring-line">
+      {MAP_STATUS_LEGEND.map((item) => (
+        <span key={item.key} className="inline-flex items-center gap-1.5">
+          <span
+            className="inline-block size-2.5 rounded-full ring-1 ring-white/80"
+            style={{ background: item.color, boxShadow: `0 0 6px ${item.color}` }}
+          />
+          <span className="font-semibold text-ink/90">{item.label}</span>
+        </span>
+      ))}
     </div>
   )
 }

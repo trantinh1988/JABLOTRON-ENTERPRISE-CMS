@@ -8,13 +8,14 @@ type Props = {
   mockMode: boolean | null
 }
 
+/** Legacy status bar — navigation is in AppShell header. */
 export function TopBar({ license, wsConnected, mockMode }: Props) {
   const mode = license?.mode ?? 'read-only'
   const full = mode === 'full'
 
   return (
-    <header className="border-b border-line/80 bg-white/70 backdrop-blur-md">
-      <div className="mx-auto flex max-w-[1440px] items-center justify-between gap-4 px-5 py-4">
+    <header className="border-b border-line/80 bg-panel/70 backdrop-blur-md">
+      <div className="flex w-full items-center justify-between gap-4 px-4 py-3 sm:px-5 lg:px-6">
         <div className="min-w-0">
           <p className="font-mono text-[11px] tracking-[0.14em] text-steel/60 uppercase">
             {vi.brandSubtitle}

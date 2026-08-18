@@ -13,6 +13,14 @@ from app.db.session import SessionLocal
 from app.iot_core.device_id import parse_global_id
 
 
+def runtime_state_for_boot(persisted: str | None) -> str:
+    """Alarm is live HID, not CMS memory — never restore Báo động after process restart."""
+    value = (persisted or "ok").strip().lower() or "ok"
+    if value == "alarm":
+        return "ok"
+    return value
+
+
 def _parse_last_seen(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -61,6 +69,7 @@ async def load_panels_into_bus(bus: Any) -> None:
                     connection=boot_connection,
                     usb_path=boot_usb_path,
                     armed_state=row.armed_state or "disarmed",
+                    stream_code=getattr(row, "stream_code", "") or "",
                     last_seen_at=_format_last_seen(row.last_seen_at),
                 )
                 bus.panels[row.panel_id] = panel
@@ -77,6 +86,7 @@ async def load_panels_into_bus(bus: Any) -> None:
                     "name": row.name,
                     "section_num": row.section_num,
                     "armed_state": row.armed_state or "disarmed",
+                    "keypad_alarm": False,
                 }
 
             user_rows = (await session.execute(select(PanelUserRecord))).scalars().all()
@@ -121,6 +131,11 @@ async def load_panels_into_bus(bus: Any) -> None:
                     device_num = int(device_token.removeprefix("DEV_"))
                 except (ValueError, AttributeError):
                     continue
+                size = getattr(row, "map_icon_size", None)
+                try:
+                    map_icon_size = float(size) if size is not None else 2.0
+                except (TypeError, ValueError):
+                    map_icon_size = 2.0
                 panel.devices[row.global_id] = {
                     "global_id": row.global_id,
                     "panel_id": row.panel_id,
@@ -128,11 +143,17 @@ async def load_panels_into_bus(bus: Any) -> None:
                     "device_num": device_num,
                     "device_type": row.device_type or "sensor",
                     "label": row.label or row.global_id,
-                    "state": row.state or "ok",
+                    "model": getattr(row, "model", None) or "",
+                    "link": getattr(row, "link", None) or "",
+                    "state": runtime_state_for_boot(row.state),
+                    "disable": getattr(row, "disable", None) or "none",
+                    "reaction": getattr(row, "reaction", None) or "instant",
                     "zone_id": row.zone_id,
                     "map_id": row.map_id,
                     "map_x": row.map_x,
                     "map_y": row.map_y,
+                    "map_icon": getattr(row, "map_icon", None) or "",
+                    "map_icon_size": max(0.5, min(5.0, map_icon_size)),
                 }
     finally:
         bus._persist = True  # type: ignore[attr-defined]
@@ -152,6 +173,8 @@ async def save_panel(panel: Any) -> None:
         row.connection = panel.connection
         row.usb_path = panel.usb_path
         row.armed_state = panel.armed_state
+        if hasattr(row, "stream_code"):
+            row.stream_code = getattr(panel, "stream_code", "") or ""
         row.last_seen_at = _parse_last_seen(panel.last_seen_at)
         await session.commit()
 
@@ -179,11 +202,27 @@ async def save_device(device: dict[str, Any]) -> None:
         row.device_id = device["device_id"]
         row.device_type = device.get("device_type") or "sensor"
         row.label = device.get("label") or global_id
+        if hasattr(row, "model"):
+            row.model = device.get("model") or ""
+        if hasattr(row, "link"):
+            row.link = device.get("link") or ""
         row.state = device.get("state") or "ok"
+        if hasattr(row, "disable"):
+            row.disable = device.get("disable") or "none"
+        if hasattr(row, "reaction"):
+            row.reaction = device.get("reaction") or "instant"
         row.zone_id = device.get("zone_id")
         row.map_id = device.get("map_id")
         row.map_x = device.get("map_x")
         row.map_y = device.get("map_y")
+        if hasattr(row, "map_icon"):
+            row.map_icon = device.get("map_icon") or ""
+        if hasattr(row, "map_icon_size"):
+            try:
+                size = float(device.get("map_icon_size") if device.get("map_icon_size") is not None else 2.0)
+            except (TypeError, ValueError):
+                size = 2.0
+            row.map_icon_size = max(0.5, min(5.0, size))
         await session.commit()
 
 

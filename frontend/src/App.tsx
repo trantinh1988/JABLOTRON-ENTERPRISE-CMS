@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { AlarmMapFocus } from './components/AlarmMapFocus'
 import { AppShell } from './components/AppShell'
 import { LICENSE_FEATURE_ENABLED } from './config/features'
 import { useCmsData } from './hooks/useCmsData'
@@ -7,6 +8,8 @@ import { DevicesPage } from './pages/DevicesPage'
 import { HistoryPage } from './pages/HistoryPage'
 import { MapsPage } from './pages/MapsPage'
 import { PanelSetupPage } from './pages/PanelSetupPage'
+import { AutomationPage } from './pages/AutomationPage'
+import { CameraManagementPage } from './pages/CameraManagementPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { StatusPage } from './pages/StatusPage'
 
@@ -15,6 +18,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <AlarmMapFocus />
       <Routes>
         <Route
           element={
@@ -23,6 +27,11 @@ export default function App() {
               wsConnected={data.connected}
               liveActive={data.liveActive}
               mockMode={data.mockMode}
+              panels={data.panels}
+              devices={data.devices}
+              writeAllowed={data.writeAllowed}
+              eventSeq={data.eventSeq}
+              onRefresh={data.refresh}
             />
           }
         >
@@ -35,9 +44,8 @@ export default function App() {
                 writeAllowed={data.writeAllowed}
                 mockMode={data.mockMode}
                 events={data.events}
-                lastEvent={data.lastEvent}
+                eventSeq={data.eventSeq}
                 loadError={data.loadError}
-                liveActive={data.liveActive}
                 onRefresh={data.refresh}
               />
             }
@@ -64,7 +72,7 @@ export default function App() {
               <PanelSetupPage
                 writeAllowed={data.writeAllowed}
                 onRefresh={data.refresh}
-                lastEvent={data.lastEvent}
+                eventSeq={data.eventSeq}
                 mockMode={data.mockMode}
                 usbHint={data.usbHint}
               />
@@ -91,13 +99,41 @@ export default function App() {
                 devices={data.devices}
                 panels={data.panels}
                 writeAllowed={data.writeAllowed}
+                wsConnected={data.connected}
+                liveActive={data.liveActive}
+                liveFlashIds={data.liveFlashIds}
+                mockMode={data.mockMode}
                 onRefresh={data.refresh}
               />
             }
           />
           <Route
             path="history"
-            element={<HistoryPage panels={data.panels} liveEvents={data.events} />}
+            element={
+              <HistoryPage
+                panels={data.panels}
+                devices={data.devices}
+                liveEvents={data.events}
+                eventSeq={data.eventSeq}
+              />
+            }
+          />
+          <Route
+            path="cameras"
+            element={
+              <CameraManagementPage maps={data.maps} writeAllowed={data.writeAllowed} />
+            }
+          />
+          <Route
+            path="automation"
+            element={
+              <AutomationPage
+                devices={data.devices}
+                panels={data.panels}
+                maps={data.maps}
+                writeAllowed={data.writeAllowed}
+              />
+            }
           />
           {LICENSE_FEATURE_ENABLED && (
             <Route

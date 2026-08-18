@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Link, useParams } from 'react-router-dom'
 import {
@@ -17,6 +17,7 @@ import {
   listPanelUsers,
   listPgs,
   listZones,
+  activatePanelDeviceStream,
   updateDevice,
   updatePanel,
   updatePanelUser,
@@ -27,10 +28,21 @@ import {
   type PanelUser,
   type PgOutput,
   type Zone,
+  patchZoneFromArmedEvent,
 } from '../api/client'
+import { DeviceIconPicker } from '../components/DeviceIconPicker'
+import { DeviceModelPicker, LinkBadge } from '../components/DeviceModelPicker'
 import { DeviceTypeIcon } from '../components/DeviceTypeIcon'
+import { ReactionBadge, ReactionSelect } from '../components/ReactionBadge'
 import { ImportPanelConfigCard } from '../components/ImportPanelConfigCard'
 import { Btn, Card, Field, StateDot, inputClass } from '../components/ui'
+import {
+  clampMapIconSize,
+  DEFAULT_MAP_ICON_SIZE,
+  resolveDeviceIconKey,
+} from '../lib/deviceIconLibrary'
+import { DEFAULT_DEVICE_REACTION, normalizeReaction } from '../lib/deviceReaction'
+import { DEVICE_FAMILY_KEYS, familyOfType, modelFitsFamily, normalizeDeviceLink, type DeviceLink } from '../lib/deviceCatalog'
 import {
   armedStateLabel,
   connectionLabel,
@@ -42,8 +54,8 @@ import {
   pgStateLabel,
   vi,
 } from '../i18n/vi'
-import type { CmsEvent } from '../api/client'
-import { applyDeviceEvent } from '../hooks/deviceEventSync'
+import { applyDeviceEvent, isDeviceStateEvent } from '../hooks/deviceEventSync'
+import { latestEventSeq, takeEventsSince } from '../hooks/useEventStream'
 
 const TABS = ['overview', 'zones', 'users', 'inputs', 'pg', 'connection'] as const
 type Tab = (typeof TABS)[number]
@@ -58,18 +70,18 @@ const TAB_LABEL: Record<Tab, string> = {
 }
 
 const PERMISSIONS = Object.keys(permissionLabel)
-const DEVICE_TYPES = Object.keys(deviceTypeLabel)
+const DEVICE_TYPES = DEVICE_FAMILY_KEYS
 const PG_MODES = Object.keys(pgModeLabel)
 
 type Props = {
   writeAllowed: boolean
   onRefresh: () => Promise<void>
-  lastEvent: CmsEvent | null
+  eventSeq: number
   mockMode: boolean | null
   usbHint: string | null
 }
 
-export function PanelSetupPage({ writeAllowed, onRefresh, lastEvent, mockMode, usbHint }: Props) {
+export function PanelSetupPage({ writeAllowed, onRefresh, eventSeq, mockMode, usbHint }: Props) {
   const { panelId = '' } = useParams()
   const [tab, setTab] = useState<Tab>('overview')
   const [panel, setPanel] = useState<Panel | null>(null)
@@ -81,6 +93,13 @@ export function PanelSetupPage({ writeAllowed, onRefresh, lastEvent, mockMode, u
   const [info, setInfo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const eventCursorRef = useRef(latestEventSeq())
+  const devicesRef = useRef(devices)
+  devicesRef.current = devices
+  const zonesRef = useRef(zones)
+  zonesRef.current = zones
+  const pgsRef = useRef(pgs)
+  pgsRef.current = pgs
 
   const zoneMap = useMemo(() => new Map(zones.map((z) => [z.zone_id, z])), [zones])
 
@@ -97,6 +116,7 @@ export function PanelSetupPage({ writeAllowed, onRefresh, lastEvent, mockMode, u
       setPanel(p)
       setZones(z)
       setUsers(u)
+      devicesRef.current = d
       setDevices(d)
       setPgs(pg)
       setError(null)
@@ -106,56 +126,89 @@ export function PanelSetupPage({ writeAllowed, onRefresh, lastEvent, mockMode, u
   }, [panelId])
 
   useEffect(() => {
+    eventCursorRef.current = latestEventSeq()
     void load()
   }, [load])
 
   useEffect(() => {
-    if (!lastEvent || !panelId) return
+    if (!panelId) return
+    const { events: batch, upTo } = takeEventsSince(eventCursorRef.current)
+    if (!batch.length) return
+    eventCursorRef.current = upTo
 
-    if (
-      lastEvent.type === 'device_state' ||
-      lastEvent.type === 'devices_state_batch' ||
-      lastEvent.type === 'devices_state_snapshot'
-    ) {
-      setDevices((prev) => {
-        const patched = applyDeviceEvent(prev, lastEvent)
+    let needLoad = false
+    let devicesNext = devicesRef.current
+    let devicesChanged = false
+    let zonesNext = zonesRef.current
+    let zonesChanged = false
+    let pgsNext = pgsRef.current
+    let pgsChanged = false
+    let panelArmed: string | null = null
+
+    for (const ev of batch) {
+      if (ev.panel_id && String(ev.panel_id) !== panelId) continue
+
+      if (isDeviceStateEvent(ev)) {
+        const patched = applyDeviceEvent(devicesNext, ev)
         if (patched === 'refresh') {
-          void load()
-          return prev
+          needLoad = true
+        } else if (patched !== devicesNext) {
+          devicesNext = patched
+          devicesChanged = true
         }
-        return patched
-      })
+      }
+
+      if (ev.type === 'panel_armed' && ev.armed_state) {
+        panelArmed = String(ev.armed_state)
+      }
+
+      if (ev.type === 'panel_connected' || ev.type === 'panel_disconnected') {
+        needLoad = true
+      }
+
+      if (ev.type === 'zone_armed' && (ev.zone_id || ev.section_num != null)) {
+        const armed = String(ev.armed_state ?? '')
+        if (!armed) continue
+        const next = zonesNext.map((z) => patchZoneFromArmedEvent(z, ev))
+        if (next.some((z, i) => z !== zonesNext[i])) {
+          zonesNext = next
+          zonesChanged = true
+        }
+      }
+
+      if (ev.type === 'pg_state' && ev.pg_id) {
+        const state = String(ev.state ?? '')
+        if (!state) continue
+        let changed = false
+        const next = pgsNext.map((p) => {
+          if (p.pg_id !== ev.pg_id || p.state === state) return p
+          changed = true
+          return { ...p, state }
+        })
+        if (changed) {
+          pgsNext = next
+          pgsChanged = true
+        }
+      }
     }
 
-    if (lastEvent.type === 'panel_armed' && lastEvent.panel_id === panelId && lastEvent.armed_state) {
-      setPanel((p) => (p ? { ...p, armed_state: String(lastEvent.armed_state) } : p))
+    if (devicesChanged) {
+      devicesRef.current = devicesNext
+      setDevices(devicesNext)
     }
-
-    if (
-      (lastEvent.type === 'panel_connected' || lastEvent.type === 'panel_disconnected') &&
-      lastEvent.panel_id === panelId
-    ) {
-      void load()
+    if (zonesChanged) {
+      zonesRef.current = zonesNext
+      setZones(zonesNext)
     }
-
-    if (lastEvent.type === 'zone_armed' && lastEvent.panel_id === panelId && lastEvent.zone_id) {
-      setZones((prev) =>
-        prev.map((z) =>
-          z.zone_id === lastEvent.zone_id
-            ? { ...z, armed_state: String(lastEvent.armed_state ?? z.armed_state) }
-            : z,
-        ),
-      )
+    if (pgsChanged) {
+      pgsRef.current = pgsNext
+      setPgs(pgsNext)
     }
-
-    if (lastEvent.type === 'pg_state' && lastEvent.panel_id === panelId && lastEvent.pg_id) {
-      setPgs((prev) =>
-        prev.map((p) =>
-          p.pg_id === lastEvent.pg_id ? { ...p, state: String(lastEvent.state ?? p.state) } : p,
-        ),
-      )
+    if (panelArmed) {
+      setPanel((p) => (p ? { ...p, armed_state: panelArmed } : p))
     }
-  }, [lastEvent, panelId, load])
+    if (needLoad) void load()
+  }, [eventSeq, panelId, load])
 
   async function reload() {
     await load()
@@ -173,7 +226,7 @@ export function PanelSetupPage({ writeAllowed, onRefresh, lastEvent, mockMode, u
   }
 
   return (
-    <div className="mx-auto max-w-[1200px] px-5 py-5">
+    <div className="w-full px-4 py-4 sm:px-5 lg:px-6 lg:py-5">
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
           <Link
@@ -241,7 +294,7 @@ export function PanelSetupPage({ writeAllowed, onRefresh, lastEvent, mockMode, u
               setBusy(true)
               setError(null)
               try {
-                await updatePanel(panelId, name)
+                await updatePanel(panelId, { display_name: name })
                 setInfo(vi.panelUpdated)
                 await reload()
               } catch (e) {
@@ -311,7 +364,46 @@ export function PanelSetupPage({ writeAllowed, onRefresh, lastEvent, mockMode, u
       )}
 
       {tab === 'connection' && panel && (
-        <ConnectionTab panel={panel} mockMode={mockMode} usbHint={usbHint} />
+        <ConnectionTab
+          panel={panel}
+          mockMode={mockMode}
+          usbHint={usbHint}
+          writeAllowed={writeAllowed}
+          busy={busy}
+          onSaveStreamCode={async (code) => {
+            setBusy(true)
+            setError(null)
+            try {
+              if (!code && panel?.has_stream_code) {
+                await activatePanelDeviceStream(panelId)
+                setInfo(vi.streamCodeSaved)
+              } else {
+                await updatePanel(panelId, { stream_code: code })
+                setInfo(code ? vi.streamCodeSaved : vi.streamCodeCleared)
+              }
+              await reload()
+              await onRefresh()
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e))
+            } finally {
+              setBusy(false)
+            }
+          }}
+          onClearStreamCode={async () => {
+            setBusy(true)
+            setError(null)
+            try {
+              await updatePanel(panelId, { stream_code: '' })
+              setInfo(vi.streamCodeCleared)
+              await reload()
+              await onRefresh()
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e))
+            } finally {
+              setBusy(false)
+            }
+          }}
+        />
       )}
     </div>
   )
@@ -389,10 +481,18 @@ function ConnectionTab({
   panel,
   mockMode,
   usbHint,
+  writeAllowed,
+  busy,
+  onSaveStreamCode,
+  onClearStreamCode,
 }: {
   panel: Panel
   mockMode: boolean | null
   usbHint: string | null
+  writeAllowed: boolean
+  busy: boolean
+  onSaveStreamCode: (code: string) => Promise<void>
+  onClearStreamCode: () => Promise<void>
 }) {
   const hint =
     panel.connection === 'usb'
@@ -402,23 +502,78 @@ function ConnectionTab({
         : vi.connectionHintDisconnected
 
   return (
-    <Card>
-      <h3 className="mb-3 text-sm font-semibold">{vi.connectionStatus}</h3>
-      <dl className="space-y-2 text-sm">
-        <Row label={vi.status} value={labelOf(connectionLabel, panel.connection)} />
-        <Row label={vi.usbPath} value={panel.usb_path ?? '—'} mono />
-        <Row label={vi.lastSeen} value={panel.last_seen_at ?? '—'} mono />
-        <Row label="armed_state" value={labelOf(armedStateLabel, panel.armed_state)} />
-      </dl>
-      <p className="mt-4 text-xs text-steel/70">{hint}</p>
-      {mockMode === false && panel.connection !== 'usb' && usbHint && (
-        <div className="mt-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
-          <p className="font-semibold">{vi.usbConnectTitle}</p>
-          <p className="mt-1">{usbHint}</p>
-          <p className="mt-2 font-mono text-[10px] opacity-90">{vi.usbConnectSteps}</p>
-        </div>
-      )}
-    </Card>
+    <div className="space-y-4">
+      <Card>
+        <h3 className="mb-3 text-sm font-semibold">{vi.connectionStatus}</h3>
+        <dl className="space-y-2 text-sm">
+          <Row label={vi.status} value={labelOf(connectionLabel, panel.connection)} />
+          <Row label={vi.usbPath} value={panel.usb_path ?? '—'} mono />
+          <Row label={vi.lastSeen} value={panel.last_seen_at ?? '—'} mono />
+          <Row label="armed_state" value={labelOf(armedStateLabel, panel.armed_state)} />
+          <Row
+            label={vi.streamCodeTitle}
+            value={
+              panel.device_stream_ok
+                ? vi.streamCodeActive
+                : panel.has_stream_code
+                  ? vi.streamCodeInactive
+                  : '—'
+            }
+          />
+        </dl>
+        <p className="mt-4 text-xs text-steel/70">{hint}</p>
+        {mockMode === false && panel.connection !== 'usb' && usbHint && (
+          <div className="mt-3 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-xs text-warn">
+            <p className="font-semibold">{vi.usbConnectTitle}</p>
+            <p className="mt-1">{usbHint}</p>
+            <p className="mt-2 font-mono text-[10px] opacity-90">{vi.usbConnectSteps}</p>
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <h3 className="mb-1 text-sm font-semibold">{vi.streamCodeTitle}</h3>
+        <p className="mb-3 text-xs text-steel/70">{vi.streamCodeHint}</p>
+        <p className="mb-3 text-xs text-steel/60">{vi.streamCodeBannerBody}</p>
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            const code = String(new FormData(e.currentTarget).get('stream_code') || '').trim()
+            void onSaveStreamCode(code)
+            if (code) e.currentTarget.reset()
+          }}
+        >
+          <Field label={vi.streamCodeTitle}>
+            <input
+              name="stream_code"
+              type="password"
+              autoComplete="off"
+              className={inputClass}
+              placeholder={vi.streamCodePlaceholder}
+            />
+          </Field>
+          <Btn type="submit" disabled={!writeAllowed || busy}>
+            {panel.has_stream_code ? vi.streamCodeReactivate : vi.streamCodeActivate}
+          </Btn>
+          {panel.has_stream_code && (
+            <Btn
+              type="button"
+              tone="ghost"
+              disabled={!writeAllowed || busy}
+              onClick={() => void onClearStreamCode()}
+            >
+              {vi.streamCodeClear}
+            </Btn>
+          )}
+        </form>
+        {panel.device_stream_ok ? (
+          <p className="mt-2 text-xs text-ok">{vi.streamCodeActive}</p>
+        ) : panel.has_stream_code ? (
+          <p className="mt-2 text-xs text-warn">{vi.streamCodeWaiting}</p>
+        ) : null}
+      </Card>
+    </div>
   )
 }
 
@@ -849,12 +1004,40 @@ function InputsTab({
   const [creating, setCreating] = useState(false)
   const [bulk, setBulk] = useState(true)
   const [editing, setEditing] = useState<Device | null>(null)
+  const [formIcon, setFormIcon] = useState('sensor')
+  const [formIconSize, setFormIconSize] = useState(DEFAULT_MAP_ICON_SIZE)
+  const [formFamily, setFormFamily] = useState('sensor')
+  const [formModel, setFormModel] = useState('')
+  const [formLink, setFormLink] = useState<DeviceLink>('')
+  const [formReaction, setFormReaction] = useState(DEFAULT_DEVICE_REACTION)
+
+  useEffect(() => {
+    if (editing) {
+      setFormIcon(resolveDeviceIconKey(editing))
+      setFormIconSize(clampMapIconSize(editing.map_icon_size))
+      setFormFamily(familyOfType(editing.device_type))
+      setFormModel(editing.model || '')
+      setFormLink(normalizeDeviceLink(editing.link))
+      setFormReaction(normalizeReaction(editing.reaction))
+    } else if (creating) {
+      setFormIcon('sensor')
+      setFormIconSize(DEFAULT_MAP_ICON_SIZE)
+      setFormFamily('sensor')
+      setFormModel('')
+      setFormLink('')
+      setFormReaction(DEFAULT_DEVICE_REACTION)
+    }
+  }, [editing, creating])
 
   async function handleCreate(form: FormData) {
     setBusy(true)
     onError(null)
     try {
-      const device_type = String(form.get('device_type') || 'sensor')
+      const device_type = formFamily || String(form.get('device_type') || 'sensor')
+      const map_icon = String(form.get('map_icon') || formIcon || device_type)
+      const map_icon_size = clampMapIconSize(
+        Number(form.get('map_icon_size') || formIconSize),
+      )
       if (bulk) {
         const result = await createDevicesBulk({
           panel_id: panelId,
@@ -862,6 +1045,11 @@ function InputsTab({
           to_num: Number(form.get('to_num')),
           device_type,
           label_prefix: String(form.get('label_prefix') || ''),
+          model: formModel.trim() || undefined,
+          link: formLink || undefined,
+          map_icon,
+          map_icon_size,
+          reaction: formReaction,
         })
         onInfo(vi.bulkResult(result.created_count, result.skipped_count))
       } else {
@@ -870,7 +1058,12 @@ function InputsTab({
           device_num: Number(form.get('device_num')),
           device_type,
           label: String(form.get('label') || ''),
+          model: formModel.trim() || undefined,
+          link: formLink || undefined,
           zone_id: String(form.get('zone_id') || '') || null,
+          map_icon,
+          map_icon_size,
+          reaction: formReaction,
         })
       }
       setCreating(false)
@@ -889,8 +1082,13 @@ function InputsTab({
     try {
       const zoneVal = String(form.get('zone_id') || '')
       await updateDevice(editing.global_id, {
-        device_type: String(form.get('device_type') || 'sensor'),
+        device_type: formFamily || String(form.get('device_type') || 'sensor'),
         label: String(form.get('label') || ''),
+        model: formModel.trim(),
+        link: formLink,
+        map_icon: String(form.get('map_icon') || formIcon),
+        map_icon_size: clampMapIconSize(Number(form.get('map_icon_size') || formIconSize)),
+        reaction: formReaction,
         ...(zoneVal ? { zone_id: zoneVal } : { clear_zone: true }),
       })
       setEditing(null)
@@ -1008,12 +1206,38 @@ function InputsTab({
               </>
             )}
             <Field label={vi.deviceType}>
-              <select name="device_type" className={inputClass} defaultValue={editing?.device_type ?? 'sensor'}>
+              <select
+                name="device_type"
+                className={inputClass}
+                value={formFamily}
+                onChange={(e) => {
+                  const t = e.target.value
+                  setFormFamily(t)
+                  if (!editing?.map_icon) setFormIcon(t)
+                  if (!modelFitsFamily(formModel, t)) setFormModel('')
+                }}
+              >
                 {DEVICE_TYPES.map((t) => (
                   <option key={t} value={t}>{deviceTypeLabel[t]}</option>
                 ))}
               </select>
             </Field>
+            <DeviceModelPicker
+              family={formFamily}
+              model={formModel}
+              link={formLink}
+              onModelChange={setFormModel}
+              onLinkChange={setFormLink}
+            />
+            <ReactionSelect value={formReaction} onChange={setFormReaction} />
+            <p className="sm:col-span-2 text-[11px] text-steel/60">{vi.reactionHint}</p>
+            <p className="sm:col-span-2 text-[11px] text-steel/60">{vi.modelPickerHint}</p>
+            <DeviceIconPicker
+              value={formIcon}
+              size={formIconSize}
+              onChange={setFormIcon}
+              onSizeChange={setFormIconSize}
+            />
             <div className="flex items-end gap-2 sm:col-span-2">
               <Btn type="submit" disabled={busy || !writeAllowed}>{vi.save}</Btn>
               <Btn tone="ghost" onClick={() => { setCreating(false); setEditing(null) }}>{vi.cancel}</Btn>
@@ -1023,7 +1247,7 @@ function InputsTab({
       )}
 
       <Card className="overflow-hidden p-0">
-        <table className="w-full min-w-[640px] text-left text-sm">
+        <table className="w-full min-w-[760px] text-left text-sm">
           <thead className="border-b border-line bg-mist/50 text-[11px] text-steel/70">
             <tr>
               <th className="w-10 px-3 py-2">
@@ -1040,8 +1264,11 @@ function InputsTab({
               </th>
               <th className="px-4 py-2">ID</th>
               <th className="px-4 py-2">{vi.label}</th>
+              <th className="px-4 py-2">{vi.model}</th>
+              <th className="px-4 py-2">{vi.link}</th>
               <th className="px-4 py-2">{vi.tabZones}</th>
               <th className="px-4 py-2">{vi.deviceType}</th>
+              <th className="px-4 py-2">{vi.reaction}</th>
               <th className="px-4 py-2">{vi.status}</th>
               <th className="px-4 py-2" />
             </tr>
@@ -1063,21 +1290,40 @@ function InputsTab({
                     className="size-3.5 accent-accent"
                   />
                 </td>
-                <td className="px-4 py-2 font-mono text-xs text-accent">{d.global_id}</td>
+                <td className="px-4 py-2 font-mono text-xs text-accent" title={d.global_id}>
+                  {d.device_num != null ? d.device_num : d.global_id}
+                </td>
                 <td className="px-4 py-2">{d.label || '—'}</td>
+                <td className="px-4 py-2 font-mono text-xs text-steel">{d.model || '—'}</td>
+                <td className="px-4 py-2"><LinkBadge link={d.link} /></td>
                 <td className="px-4 py-2 text-xs">
-                  {d.zone_id ? zoneMap.get(d.zone_id)?.name ?? d.zone_id : '—'}
+                  {d.zone_id
+                    ? (() => {
+                        const z = zoneMap.get(d.zone_id)
+                        if (!z) return d.zone_id
+                        const name = (z.name || '').trim()
+                        const sec = z.section_num
+                        if (sec != null && sec >= 1) {
+                          if (!name || /^section\s*\d+$/i.test(name)) return String(sec)
+                          return `${sec}: ${name}`
+                        }
+                        return name || d.zone_id
+                      })()
+                    : '—'}
                 </td>
                 <td className="px-4 py-2">
                   <span className="inline-flex items-center gap-1">
-                    <DeviceTypeIcon type={d.device_type} className="size-3.5" />
+                    <DeviceTypeIcon type={resolveDeviceIconKey(d)} className="size-3.5" />
                     {labelOf(deviceTypeLabel, d.device_type)}
                   </span>
                 </td>
                 <td className="px-4 py-2">
+                  <ReactionBadge reaction={d.reaction} />
+                </td>
+                <td className="px-4 py-2">
                   <span className="inline-flex items-center gap-1">
                     <StateDot state={d.state} />
-                    {labelOf(deviceStateLabel, d.state)}
+                    {labelOf(deviceStateLabel, d.state || 'ok')}
                   </span>
                 </td>
                 <td className="px-4 py-2 text-right">
@@ -1108,7 +1354,7 @@ function InputsTab({
             ))}
             {!devices.length && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-steel/50">{vi.noDevices}</td>
+                <td colSpan={10} className="px-4 py-8 text-center text-steel/50">{vi.noDevices}</td>
               </tr>
             )}
           </tbody>

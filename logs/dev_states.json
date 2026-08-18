@@ -1,0 +1,86 @@
+[
+  [
+    "PANEL_1_DEV_01",
+    "Cua 1 ",
+    "ok",
+    "PANEL_1_ZONE_1",
+    "door"
+  ],
+  [
+    "PANEL_1_DEV_02",
+    "Địa chỉ 2",
+    "open",
+    "PANEL_1_ZONE_1",
+    "door"
+  ],
+  [
+    "PANEL_1_DEV_03",
+    "Địa chỉ 3",
+    "open",
+    "PANEL_1_ZONE_1",
+    "door"
+  ],
+  [
+    "PANEL_1_DEV_04",
+    "Địa chỉ 4",
+    "open",
+    "PANEL_1_ZONE_1",
+    "door"
+  ],
+  [
+    "PANEL_1_DEV_05",
+    "Địa chỉ 5",
+    "open",
+    "PANEL_1_ZONE_1",
+    "door"
+  ],
+  [
+    "PANEL_1_DEV_06",
+    "Địa chỉ 6",
+    "open",
+    "PANEL_1_ZONE_1",
+    "door"
+  ],
+  [
+    "PANEL_1_DEV_07",
+    "Địa chỉ 7",
+    "open",
+    "PANEL_1_ZONE_1",
+    "door"
+  ],
+  [
+    "PANEL_1_DEV_08",
+    "Địa chỉ 8",
+    "open",
+    "PANEL_1_ZONE_1",
+    "door"
+  ],
+  [
+    "PANEL_1_DEV_09",
+    "Khu nhập hàng",
+    "ok",
+    "PANEL_1_ZONE_1",
+    "pir"
+  ],
+  [
+    "PANEL_1_DEV_10",
+    "Địa chỉ 10",
+    "ok",
+    "PANEL_1_ZONE_1",
+    "sensor"
+  ],
+  [
+    "PANEL_1_DEV_11",
+    "Địa chỉ 11",
+    "ok",
+    "PANEL_1_ZONE_1",
+    "sensor"
+  ],
+  [
+    "PANEL_1_DEV_12",
+    "Địa chỉ 12",
+    "ok",
+    "PANEL_1_ZONE_1",
+    "keypad"
+  ]
+]

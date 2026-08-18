@@ -83,14 +83,28 @@ export function Field({
 export const inputClass =
   'w-full rounded-md border border-line bg-fog px-3 py-2 text-sm text-ink outline-none focus:border-accent/60'
 
-export function StateDot({ state }: { state: string }) {
+export function StateDot({ state }: { state: string; disable?: string }) {
+  const st = (state || 'ok').toLowerCase()
   const color =
-    state === 'alarm' || state === 'tamper'
+    st === 'alarm' || st === 'tamper' || st === 'loss'
       ? 'bg-danger'
-      : state === 'fault'
+      : st === 'fault'
         ? 'bg-danger/70'
-        : state === 'open'
+        : st === 'open'
           ? 'bg-warn'
           : 'bg-ok'
+  return <span className={`inline-block size-2 rounded-full ${color}`} />
+}
+
+/** Dot color for Disable column only (F-Link circle colors). */
+export function DisableDot({ disable }: { disable: string }) {
+  const color =
+    disable === 'input'
+      ? 'bg-[#e6b422]'
+      : disable === 'tamper'
+        ? 'bg-[#3b82f6]'
+        : disable === 'device'
+          ? 'bg-danger'
+          : 'bg-steel/30'
   return <span className={`inline-block size-2 rounded-full ${color}`} />
 }

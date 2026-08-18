@@ -1,13 +1,34 @@
 from collections.abc import AsyncGenerator
 
-from sqlalchemy import select, text
+from sqlalchemy import event, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.config import get_settings
 from app.db.models import Base, FloorMapRecord
 
 settings = get_settings()
-engine = create_async_engine(settings.database_url, echo=False)
+
+_is_sqlite = settings.database_url.startswith("sqlite")
+engine = create_async_engine(
+    settings.database_url,
+    echo=False,
+    connect_args={"timeout": 30} if _is_sqlite else {},
+    pool_pre_ping=True,
+)
+
+if _is_sqlite:
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def _sqlite_pragma(dbapi_connection, _connection_record):  # type: ignore[no-untyped-def]
+        try:
+            cursor = dbapi_connection.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=5000")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.close()
+        except Exception:
+            pass
+
 SessionLocal = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
 
 
@@ -16,6 +37,14 @@ async def _ensure_sqlite_columns() -> None:
     alters = [
         ("devices", "map_id", "INTEGER"),
         ("devices", "zone_id", "VARCHAR(64)"),
+        ("devices", "disable", "VARCHAR(16)"),
+        ("devices", "model", "VARCHAR(64)"),
+        ("devices", "link", "VARCHAR(8) DEFAULT ''"),
+        ("devices", "map_icon", "VARCHAR(64) DEFAULT ''"),
+        ("devices", "map_icon_size", "FLOAT DEFAULT 2.0"),
+        ("devices", "reaction", "VARCHAR(32) DEFAULT 'instant'"),
+        ("panels", "stream_code", "VARCHAR(32)"),
+        ("automation_rules", "if_require_armed", "BOOLEAN DEFAULT 0"),
     ]
     async with engine.begin() as conn:
         for table, column, coltype in alters:

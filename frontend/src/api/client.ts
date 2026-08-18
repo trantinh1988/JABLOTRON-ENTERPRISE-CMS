@@ -21,6 +21,8 @@ export type Panel = {
   zone_count?: number
   user_count?: number
   pg_count?: number
+  has_stream_code?: boolean
+  device_stream_ok?: boolean
 }
 
 export type Zone = {
@@ -29,6 +31,7 @@ export type Zone = {
   name: string
   section_num: number
   armed_state: string
+  keypad_alarm?: boolean
 }
 
 export type PanelUser = {
@@ -56,11 +59,23 @@ export type Device = {
   device_num: number | null
   device_type: string
   label: string
+  /** Manual F-Link SKU or unique HID hint (JA-118M). Empty when unknown. */
+  model?: string
+  /** bus | rf from HID 0x8a length (9 = RF) */
+  link?: string
   state: string
+  /** F-Link Disable: none | input | device | tamper */
+  disable?: string
+  /** F-Link Reaction (zone type) */
+  reaction?: string
   zone_id: string | null
   map_id: number | null
   map_x: number | null
   map_y: number | null
+  /** Icon key from CMS library; empty → fall back to device_type */
+  map_icon?: string
+  /** Marker size in map units (1–5) */
+  map_icon_size?: number
 }
 
 export type FloorMap = {
@@ -81,11 +96,27 @@ export type CmsEvent = {
   panel_id?: string
   device_id?: string
   state?: string
+  disable?: string
   armed_state?: string
+  zone_id?: string
+  section_num?: number
   detail?: string
   ts?: string
   payload?: Record<string, unknown>
   [key: string]: unknown
+}
+
+/** Apply HID/CMS zone_armed to one section without touching other zones. */
+export function patchZoneFromArmedEvent(z: Zone, ev: CmsEvent): Zone {
+  const byId = Boolean(ev.zone_id) && z.zone_id === ev.zone_id
+  const bySection =
+    ev.section_num != null && Number(z.section_num) === Number(ev.section_num)
+  if (!byId && !bySection) return z
+  const armed = String(ev.armed_state ?? z.armed_state)
+  const keypadAlarm =
+    typeof ev.keypad_alarm === 'boolean' ? ev.keypad_alarm : Boolean(z.keypad_alarm)
+  if (z.armed_state === armed && Boolean(z.keypad_alarm) === keypadAlarm) return z
+  return { ...z, armed_state: armed, keypad_alarm: keypadAlarm }
 }
 
 export type GroupAction = 'arm' | 'disarm' | 'partial'
@@ -95,10 +126,15 @@ export type DeviceCreate = {
   device_num: number
   device_type?: string
   label?: string
+  model?: string
+  link?: string
   zone_id?: string | null
   map_id?: number | null
   map_x?: number | null
   map_y?: number | null
+  map_icon?: string
+  map_icon_size?: number
+  reaction?: string
 }
 
 export type DeviceBulkCreate = {
@@ -107,6 +143,11 @@ export type DeviceBulkCreate = {
   to_num: number
   device_type?: string
   label_prefix?: string
+  model?: string
+  link?: string
+  map_icon?: string
+  map_icon_size?: number
+  reaction?: string
 }
 
 export type DeviceBulkResult = {
@@ -125,12 +166,18 @@ export type DeviceBulkDeleteResult = {
 export type DeviceUpdate = {
   device_type?: string
   label?: string
+  model?: string
+  link?: string
   zone_id?: string | null
   clear_zone?: boolean
   map_id?: number | null
   map_x?: number | null
   map_y?: number | null
   clear_map?: boolean
+  map_icon?: string
+  map_icon_size?: number
+  disable?: 'none' | 'input' | 'device' | 'tamper'
+  reaction?: string
 }
 
 export type FloorMapCreate = {
@@ -155,6 +202,38 @@ async function parseError(res: Response): Promise<string> {
   }
 }
 
+const TRANSIENT_HTTP = new Set([502, 503, 504])
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
+}
+
+/** Retry GET on 502/503/504 — nginx drops host.docker.internal while HID blocks. */
+async function apiFetch(url: string, init?: RequestInit): Promise<Response> {
+  const method = (init?.method || 'GET').toUpperCase()
+  const retryable = method === 'GET' || method === 'HEAD'
+  const attempts = retryable ? 3 : 1
+  let lastRes: Response | null = null
+  let lastErr: unknown = null
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const res = await fetch(url, init)
+      if (retryable && TRANSIENT_HTTP.has(res.status) && i < attempts - 1) {
+        lastRes = res
+        await sleep(250 * (i + 1))
+        continue
+      }
+      return res
+    } catch (e) {
+      lastErr = e
+      if (!retryable || i >= attempts - 1) throw e
+      await sleep(250 * (i + 1))
+    }
+  }
+  if (lastRes) return lastRes
+  throw lastErr instanceof Error ? lastErr : new Error('Không kết nối được máy chủ')
+}
+
 export type HealthStatus = {
   status: string
   app: string
@@ -168,20 +247,20 @@ export type HealthStatus = {
 }
 
 export async function getHealth() {
-  const res = await fetch('/api/health')
+  const res = await apiFetch('/api/health')
   if (!res.ok) throw new Error(await parseError(res))
   return res.json() as Promise<HealthStatus>
 }
 
 export async function getLicenseStatus(): Promise<LicenseStatus> {
-  const res = await fetch('/api/license/status')
+  const res = await apiFetch('/api/license/status')
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
 
 export async function exportLicenseRequest(customer?: string): Promise<void> {
   const q = customer ? `?customer=${encodeURIComponent(customer)}` : ''
-  const res = await fetch(`/api/license/export-req${q}`)
+  const res = await apiFetch(`/api/license/export-req${q}`)
   if (!res.ok) throw new Error(await parseError(res))
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
@@ -195,13 +274,13 @@ export async function exportLicenseRequest(customer?: string): Promise<void> {
 export async function importLicense(file: File): Promise<{ ok: boolean; license: LicenseStatus }> {
   const form = new FormData()
   form.append('file', file)
-  const res = await fetch('/api/license/import-lic', { method: 'POST', body: form })
+  const res = await apiFetch('/api/license/import-lic', { method: 'POST', body: form })
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
 
 export async function listPanels(): Promise<Panel[]> {
-  const res = await fetch('/api/panels')
+  const res = await apiFetch('/api/panels')
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
@@ -213,7 +292,7 @@ export type PanelCreate = {
 }
 
 export async function createPanel(body: PanelCreate): Promise<Panel> {
-  const res = await fetch('/api/panels', {
+  const res = await apiFetch('/api/panels', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -222,23 +301,36 @@ export async function createPanel(body: PanelCreate): Promise<Panel> {
   return res.json()
 }
 
-export async function updatePanel(panelId: string, displayName: string): Promise<Panel> {
-  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}`, {
+export async function updatePanel(
+  panelId: string,
+  body: { display_name?: string; stream_code?: string },
+): Promise<Panel> {
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ display_name: displayName }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
 
+/** Re-enable HID device-state stream using the stored Admin/Service PIN. */
+export async function activatePanelDeviceStream(panelId: string): Promise<Panel> {
+  const res = await apiFetch(
+    `/api/panels/${encodeURIComponent(panelId)}/device-stream/activate`,
+    { method: 'POST' },
+  )
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
 export async function deletePanel(panelId: string): Promise<void> {
-  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}`, { method: 'DELETE' })
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(await parseError(res))
 }
 
 export async function getPanel(panelId: string): Promise<Panel> {
-  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}`)
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}`)
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
@@ -251,7 +343,7 @@ export async function syncPanelDevices(panelId: string): Promise<{
   matched_declared?: number
   states?: Record<string, string>
 }> {
-  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/sync-devices`, {
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}/sync-devices`, {
     method: 'POST',
   })
   if (!res.ok) throw new Error(await parseError(res))
@@ -304,7 +396,7 @@ export type PanelImportConfigResult = {
 }
 
 export async function probePanelConfig(panelId: string): Promise<PanelProbeConfig> {
-  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/probe-config`, {
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}/probe-config`, {
     method: 'POST',
   })
   if (!res.ok) throw new Error(await parseError(res))
@@ -315,7 +407,7 @@ export async function importPanelConfig(
   panelId: string,
   body: PanelImportConfigBody,
 ): Promise<PanelImportConfigResult> {
-  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/import-config`, {
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}/import-config`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -325,7 +417,7 @@ export async function importPanelConfig(
 }
 
 export async function listZones(panelId: string): Promise<Zone[]> {
-  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/zones`)
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}/zones`)
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
@@ -334,7 +426,7 @@ export async function createZone(
   panelId: string,
   body: { name: string; section_num: number },
 ): Promise<Zone> {
-  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/zones`, {
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}/zones`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -348,7 +440,7 @@ export async function updateZone(
   zoneId: string,
   body: Partial<{ name: string; section_num: number; armed_state: string; detail: string }>,
 ): Promise<Zone> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/panels/${encodeURIComponent(panelId)}/zones/${encodeURIComponent(zoneId)}`,
     {
       method: 'PATCH',
@@ -361,7 +453,7 @@ export async function updateZone(
 }
 
 export async function deleteZone(panelId: string, zoneId: string): Promise<void> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/panels/${encodeURIComponent(panelId)}/zones/${encodeURIComponent(zoneId)}`,
     { method: 'DELETE' },
   )
@@ -369,7 +461,7 @@ export async function deleteZone(panelId: string, zoneId: string): Promise<void>
 }
 
 export async function listPanelUsers(panelId: string): Promise<PanelUser[]> {
-  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/users`)
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}/users`)
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
@@ -378,7 +470,7 @@ export async function createPanelUser(
   panelId: string,
   body: { name: string; code_label?: string; permissions?: string[] },
 ): Promise<PanelUser> {
-  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/users`, {
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}/users`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -392,7 +484,7 @@ export async function updatePanelUser(
   userId: string,
   body: Partial<{ name: string; code_label: string; permissions: string[] }>,
 ): Promise<PanelUser> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/panels/${encodeURIComponent(panelId)}/users/${encodeURIComponent(userId)}`,
     {
       method: 'PATCH',
@@ -405,7 +497,7 @@ export async function updatePanelUser(
 }
 
 export async function deletePanelUser(panelId: string, userId: string): Promise<void> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/panels/${encodeURIComponent(panelId)}/users/${encodeURIComponent(userId)}`,
     { method: 'DELETE' },
   )
@@ -413,7 +505,7 @@ export async function deletePanelUser(panelId: string, userId: string): Promise<
 }
 
 export async function listPgs(panelId: string): Promise<PgOutput[]> {
-  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/pgs`)
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}/pgs`)
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
@@ -422,7 +514,7 @@ export async function createPg(
   panelId: string,
   body: { pg_num: number; label?: string; zone_id?: string | null; mode?: string },
 ): Promise<PgOutput> {
-  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/pgs`, {
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}/pgs`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -436,7 +528,7 @@ export async function updatePg(
   pgId: string,
   body: Partial<{ pg_num: number; label: string; zone_id: string | null; mode: string; state: string }>,
 ): Promise<PgOutput> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/panels/${encodeURIComponent(panelId)}/pgs/${encodeURIComponent(pgId)}`,
     {
       method: 'PATCH',
@@ -449,7 +541,7 @@ export async function updatePg(
 }
 
 export async function deletePg(panelId: string, pgId: string): Promise<void> {
-  const res = await fetch(
+  const res = await apiFetch(
     `/api/panels/${encodeURIComponent(panelId)}/pgs/${encodeURIComponent(pgId)}`,
     { method: 'DELETE' },
   )
@@ -458,7 +550,7 @@ export async function deletePg(panelId: string, pgId: string): Promise<void> {
 
 export async function listDevices(panelId: string, zoneId?: string): Promise<Device[]> {
   const q = zoneId ? `?zone_id=${encodeURIComponent(zoneId)}` : ''
-  const res = await fetch(`/api/panels/${encodeURIComponent(panelId)}/devices${q}`)
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}/devices${q}`)
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
@@ -475,13 +567,13 @@ export async function listAllDevices(params?: {
   if (params?.map_id != null) q.set('map_id', String(params.map_id))
   if (params?.state) q.set('state', params.state)
   const suffix = q.toString() ? `?${q}` : ''
-  const res = await fetch(`/api/devices${suffix}`)
+  const res = await apiFetch(`/api/devices${suffix}`)
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
 
 export async function createDevice(body: DeviceCreate): Promise<Device> {
-  const res = await fetch('/api/devices', {
+  const res = await apiFetch('/api/devices', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -491,7 +583,7 @@ export async function createDevice(body: DeviceCreate): Promise<Device> {
 }
 
 export async function createDevicesBulk(body: DeviceBulkCreate): Promise<DeviceBulkResult> {
-  const res = await fetch('/api/devices/bulk', {
+  const res = await apiFetch('/api/devices/bulk', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -501,7 +593,7 @@ export async function createDevicesBulk(body: DeviceBulkCreate): Promise<DeviceB
 }
 
 export async function updateDevice(globalId: string, body: DeviceUpdate): Promise<Device> {
-  const res = await fetch(`/api/devices/${encodeURIComponent(globalId)}`, {
+  const res = await apiFetch(`/api/devices/${encodeURIComponent(globalId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -511,12 +603,12 @@ export async function updateDevice(globalId: string, body: DeviceUpdate): Promis
 }
 
 export async function deleteDevice(globalId: string): Promise<void> {
-  const res = await fetch(`/api/devices/${encodeURIComponent(globalId)}`, { method: 'DELETE' })
+  const res = await apiFetch(`/api/devices/${encodeURIComponent(globalId)}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(await parseError(res))
 }
 
 export async function deleteDevicesBulk(globalIds: string[]): Promise<DeviceBulkDeleteResult> {
-  const res = await fetch('/api/devices/bulk-delete', {
+  const res = await apiFetch('/api/devices/bulk-delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ global_ids: globalIds }),
@@ -526,13 +618,13 @@ export async function deleteDevicesBulk(globalIds: string[]): Promise<DeviceBulk
 }
 
 export async function listMaps(): Promise<FloorMap[]> {
-  const res = await fetch('/api/maps')
+  const res = await apiFetch('/api/maps')
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
 
 export async function createMap(body: FloorMapCreate): Promise<FloorMap> {
-  const res = await fetch('/api/maps', {
+  const res = await apiFetch('/api/maps', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -542,7 +634,7 @@ export async function createMap(body: FloorMapCreate): Promise<FloorMap> {
 }
 
 export async function updateMap(id: number, body: FloorMapUpdate): Promise<FloorMap> {
-  const res = await fetch(`/api/maps/${id}`, {
+  const res = await apiFetch(`/api/maps/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -552,8 +644,43 @@ export async function updateMap(id: number, body: FloorMapUpdate): Promise<Floor
 }
 
 export async function deleteMap(id: number): Promise<void> {
-  const res = await fetch(`/api/maps/${id}`, { method: 'DELETE' })
+  const res = await apiFetch(`/api/maps/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(await parseError(res))
+}
+
+export async function uploadMapBackground(id: number, file: File): Promise<FloorMap> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await apiFetch(`/api/maps/${id}/background`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function clearMapBackground(id: number): Promise<FloorMap> {
+  const res = await apiFetch(`/api/maps/${id}/background`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function uploadMapTrailSnap(
+  mapId: number,
+  blob: Blob,
+  meta?: { pointCount?: number; seqs?: number[]; deviceIds?: string[] },
+): Promise<{ ok: boolean; map_id: number; map_name: string; image_url: string }> {
+  const form = new FormData()
+  form.append('file', blob, `map-${mapId}-trail.jpg`)
+  if (meta?.pointCount != null) form.append('point_count', String(meta.pointCount))
+  if (meta?.seqs?.length) form.append('seqs', meta.seqs.join(','))
+  if (meta?.deviceIds?.length) form.append('device_ids', meta.deviceIds.join(','))
+  const res = await apiFetch(`/api/maps/${mapId}/trail-snap`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
 }
 
 export async function listEventHistory(params?: {
@@ -561,14 +688,20 @@ export async function listEventHistory(params?: {
   offset?: number
   panel_id?: string
   event_type?: string
+  since?: string
+  until?: string
+  history_page?: boolean
 }): Promise<CmsEvent[]> {
   const q = new URLSearchParams()
   if (params?.limit != null) q.set('limit', String(params.limit))
   if (params?.offset != null) q.set('offset', String(params.offset))
   if (params?.panel_id) q.set('panel_id', params.panel_id)
   if (params?.event_type) q.set('event_type', params.event_type)
+  if (params?.since) q.set('since', params.since)
+  if (params?.until) q.set('until', params.until)
+  if (params?.history_page) q.set('history_page', 'true')
   const suffix = q.toString() ? `?${q}` : ''
-  const res = await fetch(`/api/events${suffix}`)
+  const res = await apiFetch(`/api/events${suffix}`)
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
@@ -579,7 +712,7 @@ export async function groupAction(
   detail?: string,
   opts?: { code?: string; section_num?: number },
 ) {
-  const res = await fetch('/api/panels/group-action', {
+  const res = await apiFetch('/api/panels/group-action', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -595,4 +728,235 @@ export async function groupAction(
     action: string
     results: Array<{ panel_id: string; ok: boolean; error?: string }>
   }>
+}
+
+export async function ackAlwaysAlarms(
+  panelId: string,
+  globalIds?: string[],
+  code?: string,
+): Promise<{ ok: boolean; silenced: number[]; states: Record<string, string> }> {
+  const res = await apiFetch(`/api/panels/${encodeURIComponent(panelId)}/ack-always-alarms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ global_ids: globalIds ?? null, code: code || undefined }),
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function ackDeviceAlarm(
+  globalId: string,
+): Promise<{ ok: boolean; silenced: number[]; states: Record<string, string> }> {
+  const res = await apiFetch(`/api/devices/${encodeURIComponent(globalId)}/ack-alarm`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export type CameraBrand = 'hikvision' | 'dahua' | 'kbvision' | 'ezviz' | 'onvif' | 'generic'
+
+export type Camera = {
+  id: string
+  name: string
+  brand: CameraBrand | string
+  snapshot_url: string
+  rtsp_url: string
+  username: string
+  has_password: boolean
+  floor_id: number | null
+  floor_name: string | null
+  is_active: boolean
+  last_ok_at: string | null
+  last_checked_at: string | null
+  last_error: string
+  thumbnail_url: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export type CameraWrite = {
+  name: string
+  brand?: CameraBrand
+  snapshot_url?: string
+  rtsp_url?: string
+  username?: string
+  password?: string
+  floor_id?: number | null
+  clear_floor?: boolean
+  is_active?: boolean
+}
+
+export type CameraTestInput = {
+  camera_id?: string
+  snapshot_url?: string
+  rtsp_url?: string
+  username?: string
+  password?: string
+  brand?: CameraBrand
+}
+
+export type CameraTestResult = {
+  ok: boolean
+  source?: string | null
+  content_type?: string | null
+  image_base64?: string | null
+  latency_ms?: number | null
+  error_code?: string | null
+  error?: string | null
+  captured_at?: string | null
+}
+
+export async function listCameras(floorId?: number): Promise<Camera[]> {
+  const q = floorId != null ? `?floor_id=${floorId}` : ''
+  const res = await apiFetch(`/api/cameras${q}`)
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function createCamera(body: CameraWrite): Promise<Camera> {
+  const res = await apiFetch('/api/cameras', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function updateCamera(id: string, body: CameraWrite): Promise<Camera> {
+  const res = await apiFetch(`/api/cameras/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function deleteCamera(id: string): Promise<void> {
+  const res = await apiFetch(`/api/cameras/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(await parseError(res))
+}
+
+export async function testCameraConnection(body: CameraTestInput): Promise<CameraTestResult> {
+  const res = await apiFetch('/api/cameras/test-connection', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function snapshotCamera(id: string): Promise<CameraTestResult> {
+  const res = await apiFetch(`/api/cameras/${encodeURIComponent(id)}/snapshot`, { method: 'POST' })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export type AutomationIfType =
+  | 'armed_alarm'
+  | 'device_alarm'
+  | 'device_open'
+  | 'tamper'
+  | 'loss'
+  | 'device_fault'
+  | 'section_armed'
+  | 'section_disarmed'
+  | 'panel_armed'
+  | 'panel_disarmed'
+  | 'keypad_alarm'
+
+export type AutomationThenType = 'camera_snapshot' | 'notify'
+
+export type AutomationRule = {
+  id: string
+  name: string
+  enabled: boolean
+  if_type: AutomationIfType | string
+  if_panel_id: string | null
+  if_device_id: string | null
+  if_zone_id: string | null
+  if_floor_id: number | null
+  if_require_armed: boolean
+  then_type: AutomationThenType | string
+  then_camera_id: string | null
+  then_camera_name: string | null
+  cooldown_sec: number
+  last_fired_at: string | null
+  last_error: string
+  fire_count: number
+  created_at: string | null
+  updated_at: string | null
+}
+
+export type AutomationRuleWrite = {
+  name?: string
+  enabled?: boolean
+  if_type: AutomationIfType
+  if_panel_id?: string | null
+  if_device_id?: string | null
+  if_zone_id?: string | null
+  if_floor_id?: number | null
+  if_require_armed?: boolean
+  then_type: AutomationThenType
+  then_camera_id?: string | null
+  cooldown_sec?: number
+}
+
+export type AutomationSnap = {
+  id: string
+  rule_id: string
+  camera_id: string | null
+  camera_name: string
+  device_id: string | null
+  image_url: string
+  created_at: string | null
+}
+
+export async function listAutomationRules(): Promise<AutomationRule[]> {
+  const res = await apiFetch('/api/automation/rules')
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function createAutomationRule(body: AutomationRuleWrite): Promise<AutomationRule> {
+  const res = await apiFetch('/api/automation/rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function updateAutomationRule(
+  id: string,
+  body: AutomationRuleWrite,
+): Promise<AutomationRule> {
+  const res = await apiFetch(`/api/automation/rules/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function deleteAutomationRule(id: string): Promise<void> {
+  const res = await apiFetch(`/api/automation/rules/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(await parseError(res))
+}
+
+export async function testAutomationRule(id: string): Promise<{ ok?: boolean; image_url?: string; detail?: string }> {
+  const res = await apiFetch(`/api/automation/rules/${encodeURIComponent(id)}/test`, { method: 'POST' })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function listAutomationSnaps(limit = 20): Promise<AutomationSnap[]> {
+  const res = await apiFetch(`/api/automation/snaps?limit=${limit}`)
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
 }

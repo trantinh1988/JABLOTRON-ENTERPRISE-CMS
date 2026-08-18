@@ -71,18 +71,34 @@ Default USB mode is **real HID** (`CMS_USB_MOCK_MODE=false`, VID `16D6` / PID `0
 
 For **demo without hardware**, set `CMS_USB_MOCK_MODE=true` in `.env` or `docker-compose.yml`.
 
-### Thiết bị thật (Windows)
+### USB thật — Linux & Windows (Docker UI)
 
-Docker **không** truy cập USB HID trên Windows. Chạy backend trực tiếp:
+Docker **không** passthrough USB HID ổn định (đặc biệt Windows / Docker Desktop). Kiến trúc dùng chung cả hai nền tảng:
+
+- **Backend native trên host** (`:8010`) — truy cập HID qua `hidapi`
+- **UI trong Docker** (`:8080`) — nginx proxy tới backend host
 
 ```bash
-cd backend
-pip install -r requirements.txt
-set CMS_USB_MOCK_MODE=false
-uvicorn app.main:app --host 0.0.0.0 --port 8000
+# Linux
+sudo bash scripts/setup-deps-linux.sh   # lần đầu
+sudo bash scripts/setup-usb-linux.sh    # udev
+./scripts/deploy-usb-linux.sh
+
+# Windows (PowerShell, Docker Desktop đang chạy)
+.\scripts\deploy-usb-windows.ps1
 ```
 
-Cắm cáp USB Link Jablotron → tủ xuất hiện `connection: usb`, trạng thái cảm biến cập nhật từ giao thức HID (không còn random mock).
+| | Linux | Windows |
+|--|-------|---------|
+| Deploy | `./scripts/deploy-usb-linux.sh` | `.\scripts\deploy-usb-windows.ps1` |
+| Check | `./scripts/check-usb-linux.sh` | `.\scripts\check-usb-windows.ps1` |
+| Stop | `./scripts/stop-cms.sh` | `.\scripts\stop-cms.ps1` |
+| UI compose | `docker-compose.usb-host.linux.yml` | `docker-compose.usb-host.yml` |
+
+- **UI:** http://127.0.0.1:8080  
+- **API:** http://127.0.0.1:8010/api/usb/status  
+
+Cắm USB Link Jablotron → tủ `connection: usb`, trạng thái cảm biến từ giao thức HID.
 
 ## Frontend (local Vite)
 
@@ -94,7 +110,7 @@ npm run dev
 
 UI: http://127.0.0.1:5173 — Vite proxies `/api` and `/ws` to backend `:8000`.
 
-## Docker (UI + Backend)
+## Docker (UI + Backend, mock / không USB)
 
 Yêu cầu: đã có `keys/public_key.pem` (chạy `python admin_tool_keygen.py gen-keys`).
 
@@ -104,5 +120,6 @@ docker compose up --build
 
 - **UI:** http://127.0.0.1:8080 (nginx phục vụ React + proxy API/WS)
 - Backend chỉ expose nội bộ trong network Docker (`backend:8000`)
+- Dùng cho demo / không cần HID thật (`CMS_USB_MOCK_MODE`)
 
-Tắt stack: `docker compose down`
+Tắt stack: `docker compose down` (hoặc `.\scripts\stop-cms.ps1` / `./scripts/stop-cms.sh`)

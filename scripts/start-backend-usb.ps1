@@ -1,11 +1,15 @@
-# Backend Jablotron CMS — USB HID thật trên Windows (không Docker).
-# Chạy script này TRƯỚC, sau đó: docker compose -f docker-compose.usb-host.yml up -d
+# Backend Jablotron CMS — USB HID that tren Windows (khong Docker).
+# Chay script nay TRUOC, sau do: docker compose -f docker-compose.usb-host.yml up -d --build
+#
+# Docker Desktop tren Windows khong passthrough USB HID vao container.
+# Kien truc dung (giong Linux): backend native tren host + UI trong Docker.
 
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $Backend = Join-Path $Root "backend"
 $DataDir = Join-Path $Backend "data"
 $Keys = Join-Path $Root "keys\public_key.pem"
+$Port = if ($env:CMS_BACKEND_PORT) { $env:CMS_BACKEND_PORT } else { "8010" }
 
 Set-Location $Backend
 
@@ -35,9 +39,10 @@ $env:CMS_HWID_CACHE_PATH = (Join-Path $DataDir "hwid.cache")
 $env:CMS_CORS_ORIGINS = "http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173"
 
 Write-Host ""
-Write-Host "Backend USB HID — http://0.0.0.0:8000" -ForegroundColor Green
-Write-Host "Terminal khac: docker compose -f docker-compose.usb-host.yml up -d" -ForegroundColor Cyan
-Write-Host "UI: http://127.0.0.1:8080 — cam USB Link Jablotron vao PC" -ForegroundColor Cyan
+Write-Host "Backend USB HID — http://0.0.0.0:$Port" -ForegroundColor Green
+Write-Host 'Terminal khac: docker compose -f docker-compose.usb-host.yml up -d --build' -ForegroundColor Cyan
+Write-Host 'UI: http://127.0.0.1:8080 - cam USB Link Jablotron vao PC' -ForegroundColor Cyan
 Write-Host ""
 
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+# Tranh --reload: tren Windows de de lai worker zombie, nhieu process tranh USB/port 8010.
+uvicorn app.main:app --host 0.0.0.0 --port $Port

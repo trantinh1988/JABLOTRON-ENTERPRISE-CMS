@@ -56,6 +56,52 @@
     background-size: 40px 40px;
   }
 
+  .map-tile-alarm {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--color-danger) 80%, transparent),
+      0 0 16px rgba(239, 83, 80, 0.32);
+    animation: map-tile-alarm-pulse 1.4s ease-in-out infinite;
+  }
+
+  .alarm-trail-flow {
+    animation: alarm-trail-flow 0.9s linear infinite;
+  }
+
+  @keyframes alarm-trail-flow {
+    to {
+      stroke-dashoffset: -4.3;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .alarm-trail-flow {
+      animation: none;
+    }
+  }
+
+  @keyframes map-tile-alarm-pulse {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 1px color-mix(in srgb, var(--color-danger) 80%, transparent),
+        0 0 12px rgba(239, 83, 80, 0.28);
+    }
+    50% {
+      box-shadow:
+        0 0 0 1px var(--color-danger),
+        0 0 22px rgba(239, 83, 80, 0.5);
+    }
+  }
+
+  @media (max-width: 700px) {
+    .map-wall {
+      grid-template-columns: 1fr !important;
+      grid-template-rows: none !important;
+      grid-auto-rows: minmax(220px, 42vh);
+      overflow-y: auto;
+    }
+  }
+
   .panel-card {
     border-radius: 0.75rem;
     border: 1px solid var(--color-line);
@@ -63,25 +109,253 @@
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02);
   }
 
-  .keypad-housing {
-    background:
-      linear-gradient(165deg, #f7f8fa 0%, #e4e7ec 55%, #d5dae2 100%);
-    border: 1px solid rgba(0, 0, 0, 0.08);
+  /* Section rows: LED layout — gọn, cân đối trong cột */
+  .section-panel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border-radius: 0.65rem;
+    border: 1px solid var(--color-line);
+    background: color-mix(in srgb, var(--color-mist) 70%, var(--color-fog));
+    overflow: hidden;
+    padding: 0.35rem 0.4rem;
   }
 
-  .keypad-lcd {
-    background:
-      radial-gradient(120% 80% at 50% 0%, rgba(80, 120, 70, 0.18), transparent 55%),
-      linear-gradient(180deg, #151a1f 0%, #0f1318 100%);
-    font-variant-numeric: tabular-nums;
+  .section-panel-list {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    width: 100%;
+    max-width: 17.5rem;
+    min-height: 0;
+    overflow-y: auto;
+    border-radius: 0.45rem;
+    border: 1px solid color-mix(in srgb, var(--color-line) 75%, transparent);
+    background: color-mix(in srgb, var(--color-fog) 55%, transparent);
   }
 
-  .keypad-key {
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.35);
+  .section-panel-row {
+    display: grid;
+    grid-template-columns: 2.1rem minmax(0, 1fr) 2.1rem;
+    align-items: center;
+    gap: 0.4rem;
+    flex: 0 0 auto;
+    min-height: 2.35rem;
+    max-height: 2.6rem;
+    padding: 0.28rem 0.4rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-line) 80%, transparent);
+    background: transparent;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .section-panel-row:last-child {
+    border-bottom: none;
+  }
+
+  .section-panel-row:hover {
+    background: color-mix(in srgb, var(--color-mist) 55%, transparent);
+  }
+
+  .section-panel-row--selected {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    box-shadow: inset 3px 0 0 var(--color-accent);
+  }
+
+  .section-panel-row--alarm {
+    background: color-mix(in srgb, var(--color-danger) 10%, transparent);
+  }
+
+  .section-panel-label {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.28rem;
+    min-width: 0;
+    padding: 0.28rem 0.4rem;
+    border-radius: 0.3rem;
+    background: color-mix(in srgb, var(--color-fog) 75%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-line) 70%, transparent);
+    color: var(--color-ink);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    line-height: 1.15;
+    text-align: center;
+  }
+
+  .section-panel-rx {
+    flex-shrink: 0;
+    padding: 0.05rem 0.28rem;
+    border-radius: 0.2rem;
+    font-size: 0.55rem;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    color: var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-danger) 40%, transparent);
+  }
+
+  .section-led {
+    width: 1.35rem;
+    height: 1.35rem;
+    justify-self: center;
+    border-radius: 9999px;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition:
+      transform 0.12s ease,
+      box-shadow 0.15s ease,
+      filter 0.15s ease;
+  }
+
+  .section-led:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+  }
+
+  .section-led:not(:disabled):active {
+    transform: scale(0.94);
+  }
+
+  .section-led--off {
+    background:
+      radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.16), transparent 42%),
+      radial-gradient(circle at 50% 55%, #3a4550 0%, #232b34 70%, #161c22 100%);
+    box-shadow:
+      inset 0 1px 2px rgba(255, 255, 255, 0.1),
+      inset 0 -2px 3px rgba(0, 0, 0, 0.45),
+      0 0 0 1px rgba(0, 0, 0, 0.25);
+  }
+
+  .section-led--off:not(:disabled):hover {
+    filter: brightness(1.2);
+  }
+
+  .section-led--green {
+    background:
+      radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.85), transparent 40%),
+      radial-gradient(circle at 50% 55%, #7dff9a 0%, #22f07a 45%, #0ea84f 100%);
+    box-shadow:
+      inset 0 1px 2px rgba(255, 255, 255, 0.55),
+      inset 0 -2px 3px rgba(0, 80, 30, 0.35),
+      0 0 10px rgba(34, 240, 122, 0.75),
+      0 0 16px rgba(34, 240, 122, 0.4);
+  }
+
+  .section-led--red {
+    background:
+      radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.8), transparent 40%),
+      radial-gradient(circle at 50% 55%, #ff8a8a 0%, #ff3b3b 45%, #c62828 100%);
+    box-shadow:
+      inset 0 1px 2px rgba(255, 255, 255, 0.5),
+      inset 0 -2px 3px rgba(90, 0, 0, 0.4),
+      0 0 10px rgba(255, 59, 59, 0.8),
+      0 0 16px rgba(255, 59, 59, 0.45);
+  }
+
+  .section-led--alarm {
+    animation: section-led-keypad-blink 1s steps(1, end) infinite;
+  }
+
+  .header-sections-alarm {
+    animation: header-sections-blink 1s steps(1, end) infinite;
+  }
+
+  @keyframes header-sections-blink {
+    0%,
+    49.9% {
+      background: color-mix(in srgb, var(--color-danger) 22%, transparent);
+      color: var(--color-danger);
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-danger) 55%, transparent);
+    }
+    50%,
+    100% {
+      background: color-mix(in srgb, var(--color-mist) 80%, transparent);
+      color: var(--color-steel);
+      box-shadow: 0 0 0 1px var(--color-line);
+    }
+  }
+
+  @keyframes section-led-keypad-blink {
+    0%,
+    49.9% {
+      background:
+        radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.85), transparent 40%),
+        radial-gradient(circle at 50% 55%, #ff9a9a 0%, #ff2a2a 42%, #b71c1c 100%);
+      box-shadow:
+        inset 0 1px 2px rgba(255, 255, 255, 0.55),
+        inset 0 -2px 3px rgba(90, 0, 0, 0.4),
+        0 0 12px rgba(255, 40, 40, 0.95),
+        0 0 22px rgba(255, 40, 40, 0.55);
+    }
+    50%,
+    100% {
+      background:
+        radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.16), transparent 42%),
+        radial-gradient(circle at 50% 55%, #3a4550 0%, #232b34 70%, #161c22 100%);
+      box-shadow:
+        inset 0 1px 2px rgba(255, 255, 255, 0.1),
+        inset 0 -2px 3px rgba(0, 0, 0, 0.45),
+        0 0 0 1px rgba(0, 0, 0, 0.25);
+    }
+  }
+
+  .event-feed-row {
+    min-height: 2.75rem;
+    box-sizing: border-box;
+  }
+
+  /* Chuẩn chiều cao = card Sự kiện ~15 dòng; cột còn lại khớp */
+  .dashboard-board {
+    --dash-row-h: 2.75rem;
+    --dash-row-gap: 0.375rem;
+    --dash-rows: 15;
+    --dash-list-h: calc(
+      var(--dash-rows) * var(--dash-row-h) + (var(--dash-rows) - 1) * var(--dash-row-gap)
+    );
+    --dash-card-h: calc(var(--dash-list-h) + 3.5rem);
+    height: 100%;
+    max-height: 100%;
+    align-content: stretch;
+  }
+
+  @media (min-width: 1280px) {
+    .dashboard-board {
+      height: min(100%, var(--dash-card-h));
+    }
+  }
+
+  .dashboard-board-col {
+    min-height: 0;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dashboard-board-col > .panel-card,
+  .dashboard-board-col > section {
+    flex: 1 1 auto;
+    min-height: 0;
+    height: 100%;
+  }
+
+  .dashboard-page .mb-4 {
+    margin-bottom: 0.5rem;
   }
 
   .live-flash {
-    animation: live-flash-fade 1.6s ease-out;
+    animation: live-flash-fade 2s ease-out;
+  }
+
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
   }
 
   @keyframes live-flash-fade {

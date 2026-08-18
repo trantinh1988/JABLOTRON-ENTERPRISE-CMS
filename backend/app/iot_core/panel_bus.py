@@ -7,6 +7,11 @@ from typing import Any, Literal
 
 from app.core.config import get_settings
 from app.iot_core.device_id import make_device_global_id, make_panel_id
+from app.iot_core.device_reaction import (
+    DEFAULT_DEVICE_REACTION,
+    normalize_reaction,
+    reaction_alarms_when_disarmed,
+)
 from app.iot_core.event_hub import EventHub, get_event_hub
 from app.iot_core import panel_store
 
@@ -20,6 +25,7 @@ class PanelState:
     connection: str = "disconnected"  # usb|mock|disconnected
     usb_path: str | None = None
     armed_state: str = "disarmed"
+    stream_code: str = ""  # admin/service PIN for device-state HID stream
     last_seen_at: str | None = None
     devices: dict[str, dict[str, Any]] = field(default_factory=dict)
     zones: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -94,8 +100,10 @@ class PanelBus:
         device_num: int,
         *,
         state: str | None = None,
+        disable: str | None = None,
         device_type: str | None = None,
         label: str | None = None,
+        model: str | None = None,
         zone_id: str | None = None,
         update_zone: bool = False,
         clear_zone: bool = False,
@@ -104,12 +112,46 @@ class PanelBus:
         map_y: float | None = None,
         update_map: bool = False,
         clear_map: bool = False,
+        map_icon: str | None = None,
+        map_icon_size: float | None = None,
+        link: str | None = None,
+        reaction: str | None = None,
     ) -> dict[str, Any]:
         await self.ensure_panel(panel_id)
         global_id = make_device_global_id(panel_id, device_num)
         existing = self.panels[panel_id].devices.get(global_id, {})
         if zone_id and zone_id not in self.panels[panel_id].zones:
             raise ValueError(f"Không tìm thấy vùng: {zone_id}")
+        next_disable = disable if disable is not None else existing.get("disable") or "none"
+        if next_disable not in ("none", "input", "device", "tamper"):
+            next_disable = "none"
+        next_icon = (
+            map_icon
+            if map_icon is not None
+            else (existing.get("map_icon") or "")
+        )
+        next_size = (
+            float(map_icon_size)
+            if map_icon_size is not None
+            else float(existing.get("map_icon_size") or 2.0)
+        )
+        next_size = max(0.5, min(5.0, next_size))
+        next_link = link if link is not None else existing.get("link") or ""
+        if next_link not in ("bus", "rf"):
+            next_link = ""
+        next_reaction = (
+            normalize_reaction(reaction)
+            if reaction is not None
+            else normalize_reaction(existing.get("reaction") or DEFAULT_DEVICE_REACTION)
+        )
+        next_state = state if state is not None else existing.get("state") or "ok"
+        # Chỉ promote khi user/HID đổi Reaction — không ghi đè «Tắt báo động 24h».
+        if (
+            reaction is not None
+            and reaction_alarms_when_disarmed(next_reaction)
+            and next_state == "open"
+        ):
+            next_state = "alarm"
         device = {
             "global_id": global_id,
             "panel_id": panel_id,
@@ -117,11 +159,17 @@ class PanelBus:
             "device_num": device_num,
             "device_type": device_type or existing.get("device_type") or "sensor",
             "label": label if label is not None else existing.get("label") or global_id,
-            "state": state if state is not None else existing.get("state") or "ok",
+            "model": model if model is not None else existing.get("model") or "",
+            "link": next_link,
+            "state": next_state,
+            "disable": next_disable,
+            "reaction": next_reaction,
             "zone_id": existing.get("zone_id"),
             "map_id": existing.get("map_id"),
             "map_x": existing.get("map_x"),
             "map_y": existing.get("map_y"),
+            "map_icon": str(next_icon or ""),
+            "map_icon_size": next_size,
         }
         if clear_zone:
             device["zone_id"] = None
@@ -134,9 +182,13 @@ class PanelBus:
             device["map_x"] = None
             device["map_y"] = None
         elif update_map:
-            device["map_id"] = map_id
-            device["map_x"] = map_x
-            device["map_y"] = map_y
+            # Chỉ ghi field được gửi — tránh update map_x/map_y làm mất map_id (None).
+            if map_id is not None:
+                device["map_id"] = map_id
+            if map_x is not None:
+                device["map_x"] = map_x
+            if map_y is not None:
+                device["map_y"] = map_y
         else:
             if map_id is not None:
                 device["map_id"] = map_id
@@ -161,11 +213,15 @@ class PanelBus:
             return None
         panel_id = device["panel_id"]
         device_num = int(device["device_num"])
-        return await self.upsert_device(
+        prev_state = str(device.get("state") or "ok")
+        updated = await self.upsert_device(
             panel_id,
             device_num,
             device_type=fields.get("device_type"),
             label=fields.get("label"),
+            model=fields.get("model"),
+            link=fields.get("link"),
+            disable=fields.get("disable"),
             zone_id=fields.get("zone_id"),
             update_zone=bool(fields.get("update_zone")),
             clear_zone=bool(fields.get("clear_zone")),
@@ -174,7 +230,31 @@ class PanelBus:
             map_y=fields.get("map_y"),
             update_map=bool(fields.get("update_map")),
             clear_map=bool(fields.get("clear_map")),
+            map_icon=fields.get("map_icon"),
+            map_icon_size=fields.get("map_icon_size"),
+            reaction=fields.get("reaction"),
         )
+        if updated and str(updated.get("state") or "") == "alarm" and prev_state != "alarm":
+            await self.event_hub.publish(
+                {
+                    "type": "device_state",
+                    "panel_id": panel_id,
+                    "device_id": global_id,
+                    "state": "alarm",
+                    "disable": updated.get("disable") or "none",
+                }
+            )
+            await self.event_hub.publish(
+                {
+                    "type": "device_alarm_trigger",
+                    "panel_id": panel_id,
+                    "device_id": global_id,
+                    "state": "alarm",
+                    "disable": updated.get("disable") or "none",
+                    "map_id": updated.get("map_id"),
+                }
+            )
+        return updated
 
     async def delete_device(self, global_id: str) -> bool:
         async with self._lock:
@@ -275,6 +355,7 @@ class PanelBus:
             "name": name.strip() or f"Vùng {section_num}",
             "section_num": section_num,
             "armed_state": "disarmed",
+            "keypad_alarm": False,
         }
         panel.zones[zone_id] = zone
         if self._persist:
@@ -308,7 +389,9 @@ class PanelBus:
                     "type": "zone_armed",
                     "panel_id": panel_id,
                     "zone_id": zone_id,
+                    "section_num": zone.get("section_num"),
                     "armed_state": zone["armed_state"],
+                    "keypad_alarm": bool(zone.get("keypad_alarm")),
                     "detail": fields.get("detail"),
                 }
             )
@@ -336,6 +419,7 @@ class PanelBus:
                 "type": "panel_armed",
                 "panel_id": panel_id,
                 "armed_state": armed,
+                "derived": True,
             }
         )
 
@@ -519,7 +603,8 @@ class PanelBus:
         panel = self.panels.get(panel_id)
         if panel is not None and global_id in panel.devices:
             device = panel.devices[global_id]
-            if device.get("state") == state:
+            prev = device.get("state")
+            if prev == state:
                 return device
             device["state"] = state
             await self.event_hub.publish(
@@ -528,8 +613,20 @@ class PanelBus:
                     "panel_id": panel_id,
                     "device_id": global_id,
                     "state": state,
+                    "disable": device.get("disable") or "none",
                 }
             )
+            if state == "alarm" and prev != "alarm":
+                await self.event_hub.publish(
+                    {
+                        "type": "device_alarm_trigger",
+                        "panel_id": panel_id,
+                        "device_id": global_id,
+                        "state": "alarm",
+                        "disable": device.get("disable") or "none",
+                        "map_id": device.get("map_id"),
+                    }
+                )
             if self._persist:
                 asyncio.create_task(panel_store.save_device(device))
             return device
@@ -541,6 +638,43 @@ class PanelBus:
                 "panel_id": panel_id,
                 "device_id": device["global_id"],
                 "state": state,
+                "disable": device.get("disable") or "none",
+            }
+        )
+        if state == "alarm":
+            await self.event_hub.publish(
+                {
+                    "type": "device_alarm_trigger",
+                    "panel_id": panel_id,
+                    "device_id": device["global_id"],
+                    "state": "alarm",
+                    "disable": device.get("disable") or "none",
+                    "map_id": device.get("map_id"),
+                }
+            )
+        return device
+
+    async def set_device_disable(self, panel_id: str, device_num: int, disable: str) -> dict[str, Any] | None:
+        """Update F-Link Disable bypass without touching runtime ``state``."""
+        if disable not in ("none", "input", "device", "tamper"):
+            disable = "none"
+        global_id = make_device_global_id(panel_id, device_num)
+        panel = self.panels.get(panel_id)
+        if panel is None or global_id not in panel.devices:
+            return None
+        device = panel.devices[global_id]
+        if (device.get("disable") or "none") == disable:
+            return device
+        device["disable"] = disable
+        if self._persist:
+            asyncio.create_task(panel_store.save_device(device))
+        await self.event_hub.publish(
+            {
+                "type": "device_disable",
+                "panel_id": panel_id,
+                "device_id": global_id,
+                "disable": disable,
+                "state": device.get("state") or "ok",
             }
         )
         return device
@@ -616,7 +750,9 @@ class PanelBus:
                                     "type": "zone_armed",
                                     "panel_id": panel_id,
                                     "zone_id": zone["zone_id"],
+                                    "section_num": zone.get("section_num"),
                                     "armed_state": armed,
+                                    "keypad_alarm": bool(zone.get("keypad_alarm")),
                                     "detail": event_detail,
                                 }
                             )
@@ -631,6 +767,7 @@ class PanelBus:
                                 "panel_id": panel_id,
                                 "armed_state": armed,
                                 "detail": event_detail,
+                                "history": not bool(panel.zones),
                             }
                         )
                         if action in ("arm", "disarm") and panel.zones:
@@ -645,7 +782,9 @@ class PanelBus:
                                         "type": "zone_armed",
                                         "panel_id": panel_id,
                                         "zone_id": zone["zone_id"],
+                                        "section_num": zone.get("section_num"),
                                         "armed_state": armed,
+                                        "keypad_alarm": bool(zone.get("keypad_alarm")),
                                         "detail": event_detail,
                                     }
                                 )

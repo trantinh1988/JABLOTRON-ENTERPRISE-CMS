@@ -18,6 +18,7 @@ type Props = {
   onError?: (msg: string | null) => void
   onInfo?: (msg: string | null) => void
   onDone?: () => Promise<void> | void
+  className?: string
 }
 
 export function ImportPanelConfigCard({
@@ -29,6 +30,7 @@ export function ImportPanelConfigCard({
   onError,
   onInfo,
   onDone,
+  className = 'mb-4',
 }: Props) {
   const defaultPanelId =
     selectedPanelId ||
@@ -121,7 +123,7 @@ export function ImportPanelConfigCard({
   if (!panels.length) return null
 
   return (
-    <Card className="mb-4">
+    <Card className={className}>
       <h3 className="mb-1 text-sm font-semibold">{vi.importPanelConfig}</h3>
       <p className="mb-3 text-xs text-steel/70">{vi.importPanelConfigHint}</p>
       <div className="flex flex-wrap items-end gap-3">

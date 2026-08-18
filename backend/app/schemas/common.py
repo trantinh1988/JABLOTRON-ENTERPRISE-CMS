@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.iot_core.device_reaction import DEFAULT_DEVICE_REACTION, REACTION_PATTERN
+
 
 class LicenseStatusOut(BaseModel):
     status: str
@@ -37,6 +39,8 @@ class PanelOut(BaseModel):
     zone_count: int = 0
     user_count: int = 0
     pg_count: int = 0
+    has_stream_code: bool = False
+    device_stream_ok: bool = False
 
 
 class PanelCreateIn(BaseModel):
@@ -49,6 +53,8 @@ class PanelCreateIn(BaseModel):
 
 class PanelUpdateIn(BaseModel):
     display_name: str | None = None
+    # Admin/Service PIN to enable realtime device states (0x55/0xd8). Empty clears.
+    stream_code: str | None = Field(None, max_length=32)
 
 
 class PanelProbeConfigOut(BaseModel):
@@ -102,11 +108,20 @@ class DeviceOut(BaseModel):
     device_num: int | None = None
     device_type: str = "sensor"
     label: str = ""
+    model: str = ""
+    # bus | rf | "" (HID length 9 = rf)
+    link: str = ""
     state: str = "ok"
+    # F-Link Disable: none | input | device | tamper
+    disable: str = "none"
+    # F-Link Reaction (zone type)
+    reaction: str = DEFAULT_DEVICE_REACTION
     zone_id: str | None = None
     map_id: int | None = None
     map_x: float | None = None
     map_y: float | None = None
+    map_icon: str = ""
+    map_icon_size: float = 2.0
 
 
 class DeviceCreateIn(BaseModel):
@@ -114,10 +129,16 @@ class DeviceCreateIn(BaseModel):
     device_num: int = Field(..., ge=0, le=99)
     device_type: str = "sensor"
     label: str = ""
+    model: str | None = None
+    link: str | None = Field(None, pattern="^(bus|rf|)$")
     zone_id: str | None = None
     map_id: int | None = None
     map_x: float | None = None
     map_y: float | None = None
+    map_icon: str | None = Field(None, max_length=64)
+    map_icon_size: float | None = Field(None, ge=0.5, le=5.0)
+    disable: str | None = Field(None, pattern="^(none|input|device|tamper)$")
+    reaction: str | None = Field(None, pattern=REACTION_PATTERN)
 
 
 class DeviceBulkCreateIn(BaseModel):
@@ -127,7 +148,14 @@ class DeviceBulkCreateIn(BaseModel):
     from_num: int = Field(..., ge=0, le=99)
     to_num: int = Field(..., ge=0, le=99)
     device_type: str = "sensor"
+    model: str | None = None
+    link: str | None = Field(None, pattern="^(bus|rf|)$")
     label_prefix: str = ""
+    zone_id: str | None = None
+    map_icon: str | None = Field(None, max_length=64)
+    map_icon_size: float | None = Field(None, ge=0.5, le=5.0)
+    disable: str | None = Field(None, pattern="^(none|input|device|tamper)$")
+    reaction: str | None = Field(None, pattern=REACTION_PATTERN)
 
 
 class DeviceBulkCreateOut(BaseModel):
@@ -147,15 +175,32 @@ class DeviceBulkDeleteOut(BaseModel):
     missing: list[str] = Field(default_factory=list)
 
 
+class AckAlwaysAlarmIn(BaseModel):
+    global_ids: list[str] | None = None
+    code: str | None = None
+
+
+class AckAlwaysAlarmOut(BaseModel):
+    ok: bool = True
+    silenced: list[int] = Field(default_factory=list)
+    states: dict[str, str] = Field(default_factory=dict)
+
+
 class DeviceUpdateIn(BaseModel):
     device_type: str | None = None
     label: str | None = None
+    model: str | None = None
+    link: str | None = Field(None, pattern="^(bus|rf|)$")
     zone_id: str | None = None
     clear_zone: bool = False
     map_id: int | None = None
     map_x: float | None = None
     map_y: float | None = None
     clear_map: bool = False
+    map_icon: str | None = Field(None, max_length=64)
+    map_icon_size: float | None = Field(None, ge=0.5, le=5.0)
+    disable: str | None = Field(None, pattern="^(none|input|device|tamper)$")
+    reaction: str | None = Field(None, pattern=REACTION_PATTERN)
 
 
 class ZoneOut(BaseModel):
@@ -164,6 +209,7 @@ class ZoneOut(BaseModel):
     name: str
     section_num: int
     armed_state: str = "disarmed"
+    keypad_alarm: bool = False
 
 
 class ZoneCreateIn(BaseModel):
@@ -267,6 +313,13 @@ class FloorMapOut(BaseModel):
     updated_at: str | None = None
 
 
+class MapTrailSnapOut(BaseModel):
+    ok: bool = True
+    map_id: int
+    map_name: str
+    image_url: str
+
+
 class FloorMapCreateIn(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
     description: str = ""
@@ -290,6 +343,134 @@ class EventOut(BaseModel):
     device_id: str | None = None
     state: str | None = None
     armed_state: str | None = None
+    zone_id: str | None = None
+    section_num: int | None = None
     detail: str | None = None
     payload: dict[str, Any] = Field(default_factory=dict)
     ts: str | None = None
+
+
+CameraBrand = Literal["hikvision", "dahua", "kbvision", "ezviz", "onvif", "generic"]
+
+
+class CameraOut(BaseModel):
+    id: str
+    name: str
+    brand: str = "generic"
+    snapshot_url: str = ""
+    rtsp_url: str = ""
+    username: str = ""
+    has_password: bool = False
+    floor_id: int | None = None
+    floor_name: str | None = None
+    is_active: bool = True
+    last_ok_at: str | None = None
+    last_checked_at: str | None = None
+    last_error: str = ""
+    thumbnail_url: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class CameraCreateIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=128)
+    brand: CameraBrand = "generic"
+    snapshot_url: str = Field("", max_length=1024)
+    rtsp_url: str = Field("", max_length=1024)
+    username: str = Field("", max_length=128)
+    password: str = Field("", max_length=256)
+    floor_id: int | None = None
+    is_active: bool = True
+
+
+class CameraUpdateIn(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=128)
+    brand: CameraBrand | None = None
+    snapshot_url: str | None = Field(None, max_length=1024)
+    rtsp_url: str | None = Field(None, max_length=1024)
+    username: str | None = Field(None, max_length=128)
+    password: str | None = Field(None, max_length=256)
+    floor_id: int | None = None
+    clear_floor: bool = False
+    is_active: bool | None = None
+
+
+class CameraTestIn(BaseModel):
+    camera_id: str | None = None
+    snapshot_url: str = Field("", max_length=1024)
+    rtsp_url: str = Field("", max_length=1024)
+    username: str = Field("", max_length=128)
+    password: str = Field("", max_length=256)
+    brand: CameraBrand = "generic"
+
+
+class CameraTestOut(BaseModel):
+    ok: bool
+    source: str | None = None
+    content_type: str | None = None
+    image_base64: str | None = None
+    latency_ms: int | None = None
+    error_code: str | None = None
+    error: str | None = None
+    captured_at: str | None = None
+
+
+AutomationIfType = Literal[
+    "armed_alarm",
+    "device_alarm",
+    "device_open",
+    "tamper",
+    "loss",
+    "device_fault",
+    "section_armed",
+    "section_disarmed",
+    "panel_armed",
+    "panel_disarmed",
+    "keypad_alarm",
+]
+AutomationThenType = Literal["camera_snapshot", "notify"]
+
+
+class AutomationRuleOut(BaseModel):
+    id: str
+    name: str
+    enabled: bool = True
+    if_type: str
+    if_panel_id: str | None = None
+    if_device_id: str | None = None
+    if_zone_id: str | None = None
+    if_floor_id: int | None = None
+    if_require_armed: bool = False
+    then_type: str = "camera_snapshot"
+    then_camera_id: str | None = None
+    then_camera_name: str | None = None
+    cooldown_sec: int = 30
+    last_fired_at: str | None = None
+    last_error: str = ""
+    fire_count: int = 0
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class AutomationRuleIn(BaseModel):
+    name: str = Field("", max_length=128)
+    enabled: bool = True
+    if_type: AutomationIfType
+    if_panel_id: str | None = Field(None, max_length=64)
+    if_device_id: str | None = Field(None, max_length=64)
+    if_zone_id: str | None = Field(None, max_length=64)
+    if_floor_id: int | None = None
+    if_require_armed: bool = False
+    then_type: AutomationThenType = "camera_snapshot"
+    then_camera_id: str | None = Field(None, max_length=36)
+    cooldown_sec: int = Field(30, ge=5, le=3600)
+
+
+class AutomationSnapOut(BaseModel):
+    id: str
+    rule_id: str
+    camera_id: str | None = None
+    camera_name: str = ""
+    device_id: str | None = None
+    image_url: str = ""
+    created_at: str | None = None

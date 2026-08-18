@@ -11,6 +11,12 @@ backend/data/*.db
 backend/data/*.db-*
 backend/data/hwid.cache
 backend/data/license.json
+backend/data/acked_always.json
+backend/data/map_backgrounds/
+backend/data/camera_thumbs/
+backend/data/alarm_snaps/
+backend/data/map_snaps/
+backend/data/camera.key
 *.req
 *.lic
 
