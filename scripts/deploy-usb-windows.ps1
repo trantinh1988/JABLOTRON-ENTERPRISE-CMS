@@ -34,8 +34,14 @@ $nginxRuntime = Join-Path $DataDir "nginx-ui.conf"
 if (Test-Path $nginxRuntime -PathType Container) {
     Remove-Item $nginxRuntime -Recurse -Force
 }
-if (-not (Test-Path $nginxRuntime -PathType Leaf)) {
-    Copy-Item (Join-Path $Root "frontend\nginx.host-backend.conf") $nginxRuntime -ErrorAction SilentlyContinue
+# Luôn ghi lại nginx Windows (listen 80 + host.docker.internal).
+# Container Linux từng ghi đè file này thành hostnet → UI/stream USB gãy.
+Copy-Item (Join-Path $Root "frontend\nginx.host-backend.conf") $nginxRuntime -Force
+$ensurePy = Join-Path $Backend ".venv\Scripts\python.exe"
+if (Test-Path $ensurePy) {
+    Push-Location $Backend
+    & $ensurePy -c "from app.iot_core.host_ports import ensure_runtime_files; ensure_runtime_files()" 2>$null
+    Pop-Location
 }
 
 if (-not (Test-Path $Keys)) {
@@ -150,7 +156,7 @@ if ($hint -match 'Docker') {
 Write-Host ""
 Write-Host ("=== 6. Khoi dong UI Docker proxy host.docker.internal:{0} ===" -f $Port)
 Set-Location $Root
-docker compose -f docker-compose.usb-host.yml up -d --build --remove-orphans
+docker compose -f docker-compose.usb-host.yml up -d --build --force-recreate --remove-orphans
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Docker compose that bai - dam bao Docker Desktop dang chay." -ForegroundColor Red
     exit 1

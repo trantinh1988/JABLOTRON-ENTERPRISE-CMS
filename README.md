@@ -114,12 +114,14 @@ UI: http://127.0.0.1:5173 — Vite proxies `/api` and `/ws` to backend `:8000`.
 
 Yêu cầu: đã có `keys/public_key.pem` (chạy `python admin_tool_keygen.py gen-keys`).
 
+Windows (Docker Desktop) và Linux (VPS) dùng **cùng một file**:
+
 ```bash
-docker compose up --build
+docker compose -f docker-compose.all-in-docker.yml up -d --build
 ```
 
-- **UI:** http://127.0.0.1:8080 (nginx phục vụ React + proxy API/WS)
-- Backend chỉ expose nội bộ trong network Docker (`backend:8000`)
-- Dùng cho demo / không cần HID thật (`CMS_USB_MOCK_MODE`)
+- **UI:** http://127.0.0.1:8080
+- Backend trong mạng Docker (`backend:8000`), mock USB
+- Máy USB thật: dùng `deploy-usb-windows.ps1` / `deploy-usb-linux.sh` (không dùng file này)
 
-Tắt stack: `docker compose down` (hoặc `.\scripts\stop-cms.ps1` / `./scripts/stop-cms.sh`)
+Tắt stack: `docker compose -f docker-compose.all-in-docker.yml down` (hoặc `.\scripts\stop-cms.ps1` / `./scripts/stop-cms.sh`)

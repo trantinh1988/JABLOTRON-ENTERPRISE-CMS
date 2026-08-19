@@ -29,8 +29,12 @@ $nginxRuntime = Join-Path $DataDir "nginx-ui.conf"
 if (Test-Path $nginxRuntime -PathType Container) {
     Remove-Item $nginxRuntime -Recurse -Force
 }
-if (-not (Test-Path $nginxRuntime -PathType Leaf)) {
-    Copy-Item (Join-Path $Root "frontend\nginx.host-backend.conf") $nginxRuntime -ErrorAction SilentlyContinue
+Copy-Item (Join-Path $Root "frontend\nginx.host-backend.conf") $nginxRuntime -Force
+$ensurePy = Join-Path $Backend ".venv\Scripts\python.exe"
+if (Test-Path $ensurePy) {
+    Push-Location $Backend
+    & $ensurePy -c "from app.iot_core.host_ports import ensure_runtime_files; ensure_runtime_files()" 2>$null
+    Pop-Location
 }
 function Write-Auto([string]$msg) {
     $line = "{0:yyyy-MM-dd HH:mm:ss} {1}" -f (Get-Date), $msg
@@ -136,7 +140,8 @@ if (Wait-Docker 240) {
     docker stop jablotron-cms-backend 2>$null | Out-Null
     docker rm jablotron-cms-backend 2>$null | Out-Null
     docker compose -f docker-compose.yml stop backend 2>$null | Out-Null
-    docker compose -f docker-compose.usb-host.yml up -d --remove-orphans
+    docker compose -f docker-compose.all-in-docker.yml stop 2>$null | Out-Null
+    docker compose -f docker-compose.usb-host.yml up -d --force-recreate --remove-orphans
     Write-Auto "compose usb-host done"
 } else {
     Write-Auto "Docker Desktop not ready — backend USB still running"

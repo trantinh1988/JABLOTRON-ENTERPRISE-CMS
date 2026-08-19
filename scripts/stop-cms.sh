@@ -8,6 +8,7 @@ PID_FILE="$ROOT/logs/backend.pid"
 echo "Dừng container Docker..."
 docker stop jablotron-cms-backend jablotron-cms-frontend 2>/dev/null || true
 docker compose -f "$ROOT/docker-compose.yml" down --remove-orphans 2>/dev/null || true
+docker compose -f "$ROOT/docker-compose.all-in-docker.yml" down --remove-orphans 2>/dev/null || true
 docker compose -f "$ROOT/docker-compose.usb-host.yml" down --remove-orphans 2>/dev/null || true
 docker compose -f "$ROOT/docker-compose.usb-host.linux.yml" down --remove-orphans 2>/dev/null || true
 

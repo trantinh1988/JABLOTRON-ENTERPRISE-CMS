@@ -6,6 +6,7 @@ $PidFile = Join-Path $Root "logs\backend.pid"
 Write-Host "Dung container Docker..."
 docker stop jablotron-cms-backend jablotron-cms-frontend 2>$null | Out-Null
 docker compose -f (Join-Path $Root "docker-compose.yml") down --remove-orphans 2>$null | Out-Null
+docker compose -f (Join-Path $Root "docker-compose.all-in-docker.yml") down --remove-orphans 2>$null | Out-Null
 docker compose -f (Join-Path $Root "docker-compose.usb-host.yml") down --remove-orphans 2>$null | Out-Null
 docker compose -f (Join-Path $Root "docker-compose.usb-host.linux.yml") down --remove-orphans 2>$null | Out-Null
 

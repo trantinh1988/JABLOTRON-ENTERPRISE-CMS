@@ -97,9 +97,17 @@ def cors_origins_env(ui_port: int) -> str:
     return ",".join(cors_origins(ui_port))
 
 
+def running_in_docker() -> bool:
+    """Docker Linux container must not rewrite Windows host nginx-ui.conf (USB stream)."""
+    if os.environ.get("CMS_IN_DOCKER", "").strip().lower() in {"1", "true", "yes"}:
+        return True
+    return Path("/.dockerenv").exists()
+
+
 def _nginx_conf(*, ui_port: int, api_port: int, hostnet: bool) -> str:
     listen = str(ui_port) if hostnet else "80"
     upstream = f"127.0.0.1:{api_port}" if hostnet else f"host.docker.internal:{api_port}"
+    # proxy_pass không kèm URI — giữ /api /media /ws để WebSocket + stream HID không 404/gãy.
     return (
         f"# generated — UI :{ui_port}  API :{api_port}\n"
         "server {\n"
@@ -126,7 +134,7 @@ def _nginx_conf(*, ui_port: int, api_port: int, hostnet: bool) -> str:
         "    }\n"
         "\n"
         "    location /api/ {\n"
-        f"        proxy_pass http://{upstream}/api/;\n"
+        f"        proxy_pass http://{upstream};\n"
         "        proxy_http_version 1.1;\n"
         "        proxy_set_header Host $host;\n"
         "        proxy_set_header X-Real-IP $remote_addr;\n"
@@ -141,7 +149,7 @@ def _nginx_conf(*, ui_port: int, api_port: int, hostnet: bool) -> str:
         "    }\n"
         "\n"
         "    location /media/ {\n"
-        f"        proxy_pass http://{upstream}/media/;\n"
+        f"        proxy_pass http://{upstream};\n"
         "        proxy_http_version 1.1;\n"
         "        proxy_set_header Host $host;\n"
         "        proxy_set_header X-Real-IP $remote_addr;\n"
@@ -151,7 +159,7 @@ def _nginx_conf(*, ui_port: int, api_port: int, hostnet: bool) -> str:
         "    }\n"
         "\n"
         "    location /ws/ {\n"
-        f"        proxy_pass http://{upstream}/ws/;\n"
+        f"        proxy_pass http://{upstream};\n"
         "        proxy_http_version 1.1;\n"
         "        proxy_set_header Upgrade $http_upgrade;\n"
         "        proxy_set_header Connection \"upgrade\";\n"
@@ -172,6 +180,8 @@ def _replace_runtime_file(path: Path, text: str, encoding: str) -> None:
 
 
 def write_runtime_files(ui_port: int, api_port: int) -> None:
+    if running_in_docker():
+        return
     data_dir = BACKEND_ROOT / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     hostnet = current_os() == "linux"
