@@ -40,7 +40,7 @@ services:
     restart: unless-stopped
     ports:
       - "${CMS_UI_PORT:-8080}:80"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
-      - ./backend/data/nginx-ui.conf:/etc/nginx/conf.d/default.conf:ro
+      # File trong git — không mount backend/data/nginx-ui.conf (gitignore).
+      # Docker tạo path thiếu thành thư mục → mount file trong image sẽ crash.
+      - ./frontend/nginx.docker-backend.conf:/etc/nginx/conf.d/default.conf:ro

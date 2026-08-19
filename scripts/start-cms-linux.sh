@@ -26,6 +26,10 @@ if [[ -f "$DATA_DIR/host_ports.json" ]]; then
   [[ -n "${_api:-}" ]] && CMS_BACKEND_PORT="$_api"
 fi
 export CMS_UI_PORT CMS_BACKEND_PORT
+# Docker tạo nginx-ui.conf thành thư mục nếu file gitignore chưa có trên host.
+if [[ -d "$DATA_DIR/nginx-ui.conf" ]]; then
+  rm -rf "$DATA_DIR/nginx-ui.conf"
+fi
 if [[ ! -f "$DATA_DIR/nginx-ui.conf" ]]; then
   cp "$ROOT/frontend/nginx.host-backend.hostnet.conf" "$DATA_DIR/nginx-ui.conf"
 fi

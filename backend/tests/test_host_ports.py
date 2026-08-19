@@ -47,6 +47,15 @@ def test_nginx_linux_hostnet():
     assert "host.docker.internal" not in text
 
 
+def test_replace_runtime_file_removes_docker_leftover_dir(tmp_path: Path):
+    leftover = tmp_path / "nginx-ui.conf"
+    leftover.mkdir()
+    (leftover / "stale").write_text("x", encoding="utf-8")
+    hp._replace_runtime_file(leftover, "ok\n", "utf-8")
+    assert leftover.is_file()
+    assert leftover.read_text(encoding="utf-8") == "ok\n"
+
+
 def test_cors_includes_ui_port():
     origins = hp.cors_origins(9090)
     assert "http://127.0.0.1:9090" in origins

@@ -31,7 +31,10 @@ if (Test-Path $portsFile) {
 $env:CMS_UI_PORT = $UiPort
 $env:CMS_BACKEND_PORT = $Port
 $nginxRuntime = Join-Path $DataDir "nginx-ui.conf"
-if (-not (Test-Path $nginxRuntime)) {
+if (Test-Path $nginxRuntime -PathType Container) {
+    Remove-Item $nginxRuntime -Recurse -Force
+}
+if (-not (Test-Path $nginxRuntime -PathType Leaf)) {
     Copy-Item (Join-Path $Root "frontend\nginx.host-backend.conf") $nginxRuntime -ErrorAction SilentlyContinue
 }
 

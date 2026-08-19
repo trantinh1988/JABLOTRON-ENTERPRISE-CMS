@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -163,13 +164,21 @@ def _nginx_conf(*, ui_port: int, api_port: int, hostnet: bool) -> str:
     )
 
 
+def _replace_runtime_file(path: Path, text: str, encoding: str) -> None:
+    """Docker bind-mounts a missing host file as a directory — remove leftover then write."""
+    if path.exists() and path.is_dir():
+        shutil.rmtree(path)
+    path.write_text(text, encoding=encoding)
+
+
 def write_runtime_files(ui_port: int, api_port: int) -> None:
     data_dir = BACKEND_ROOT / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     hostnet = current_os() == "linux"
-    nginx_runtime_path().write_text(
+    _replace_runtime_file(
+        nginx_runtime_path(),
         _nginx_conf(ui_port=ui_port, api_port=api_port, hostnet=hostnet),
-        encoding="utf-8",
+        "utf-8",
     )
     env_runtime_path().write_text(
         f"CMS_UI_PORT={ui_port}\nCMS_BACKEND_PORT={api_port}\n",
