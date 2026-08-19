@@ -392,14 +392,21 @@ async def apply_restored_runtime() -> None:
     from app.iot_core.usb_manager import get_usb_manager
     from app.license_manager.service import get_license_service
 
-    await engine.dispose()
-    await reload_panels_from_db(get_panel_bus())
-    await get_automation_engine().reload()
-    await get_license_service().load_from_db()
+    usb = get_usb_manager()
+    usb._poll_pause_depth += 1
     try:
-        get_usb_manager()._load_acked_always()
-    except Exception as exc:
-        log.warning("Could not reload acked-always after restore: %s", exc)
+        await engine.dispose()
+        await reload_panels_from_db(get_panel_bus())
+        await get_automation_engine().reload()
+        await get_license_service().load_from_db()
+        try:
+            usb._load_acked_always()
+        except Exception as exc:
+            log.warning("Could not reload acked-always after restore: %s", exc)
+        for panel_id in list(usb._sessions):
+            await usb.request_device_stream_refresh(panel_id)
+    finally:
+        usb._poll_pause_depth = max(0, usb._poll_pause_depth - 1)
     await get_event_hub().publish(
         {
             "type": "system_backup_restored",

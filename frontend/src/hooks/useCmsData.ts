@@ -85,6 +85,8 @@ export function useCmsData() {
   const failStreakRef = useRef(0)
   const pulseHoldRef = useRef(new DevicePulseHold())
   const streamRetryRef = useRef<Record<string, number>>({})
+  const refreshSoonRef = useRef<number | null>(null)
+  const unknownIdRefreshRef = useRef(new Set<string>())
 
   const commitDevices = useCallback((next: Device[]) => {
     devicesRef.current = next
@@ -154,6 +156,7 @@ export function useCmsData() {
       }
       setLoadError(null)
       failStreakRef.current = 0
+      unknownIdRefreshRef.current.clear()
     } catch (e) {
       if (requestId !== refreshInFlightRef.current) return
       failStreakRef.current += 1
@@ -179,7 +182,10 @@ export function useCmsData() {
   useEffect(() => {
     void refresh({ forceRestRuntime: true })
     const id = window.setInterval(() => void refresh(), FULL_REFRESH_MS)
-    return () => window.clearInterval(id)
+    return () => {
+      window.clearInterval(id)
+      if (refreshSoonRef.current != null) window.clearTimeout(refreshSoonRef.current)
+    }
   }, [refresh])
 
   useEffect(() => {
@@ -228,7 +234,11 @@ export function useCmsData() {
         const beforeList = devicesNext
         const patched = applyDeviceEvent(devicesNext, ev)
         if (patched === 'refresh') {
-          needRefresh = true
+          const novel = deviceIdsFromEvent(ev).filter((id) => !unknownIdRefreshRef.current.has(id))
+          if (novel.length) {
+            for (const id of novel) unknownIdRefreshRef.current.add(id)
+            needRefresh = true
+          }
           if (ev.type === 'device_alarm_trigger' && ev.device_id) {
             alarmFocusIds.push({
               deviceId: String(ev.device_id),
@@ -453,8 +463,14 @@ export function useCmsData() {
       setLiveActive(true)
     }
     if (usbHintNext) setUsbHint(usbHintNext)
-    // Disarm / inventory: force REST so sticky alarm cannot win over cleared backend.
-    if (needRefresh) void refresh({ forceRestRuntime: true })
+    // Restore / inventory / USB reconnect: gộp REST 1 lần — tránh load maps liên tục.
+    if (needRefresh) {
+      if (refreshSoonRef.current != null) window.clearTimeout(refreshSoonRef.current)
+      refreshSoonRef.current = window.setTimeout(() => {
+        refreshSoonRef.current = null
+        void refresh({ forceRestRuntime: true })
+      }, 900)
+    }
   }, [eventSeq, refresh, settlePulseHold])
 
   useEffect(() => {

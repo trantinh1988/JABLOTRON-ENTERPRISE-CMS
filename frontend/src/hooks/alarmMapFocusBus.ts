@@ -149,13 +149,13 @@ export function requestAlarmMapFocus(
   } else if (Date.now() < suppressUntil && suppressedIds.has(id)) {
     return lastFocus ?? invalid
   }
-  if (
-    lastFocus &&
-    lastFocus.deviceId === id &&
-    lastFocus.mapId === mid &&
-    queue.some((q) => q.deviceId === id)
-  ) {
-    return lastFocus
+  const queued = queue.find((q) => q.deviceId === id)
+  if (queued && queued.mapId === mid) {
+    // Restore / HID hay gửi lại trigger khi điểm đã Báo động — không nhảy map, không reload ảnh.
+    queued.at = Date.now()
+    queue = [queued, ...queue.filter((q) => q.deviceId !== id)].slice(0, 24)
+    emitQueue()
+    return queued
   }
 
   tokenSeq += 1

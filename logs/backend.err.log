@@ -7,3 +7,7 @@ INFO:     127.0.0.1:52467 - "WebSocket /ws/events" [accepted]
 INFO:     connection open
 INFO:     127.0.0.1:50651 - "WebSocket /ws/events" [accepted]
 INFO:     connection open
+INFO:     127.0.0.1:61293 - "WebSocket /ws/events" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:64746 - "WebSocket /ws/events" [accepted]
+INFO:     connection open
