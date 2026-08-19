@@ -1,16 +1,19 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { NavLink, Navigate, Outlet, useLocation } from 'react-router-dom'
 import {
   Activity,
+  Archive,
   ChevronDown,
   History,
   LayoutDashboard,
   List,
+  LogOut,
   Map as MapIcon,
   Menu,
   Radio,
   Rows3,
   Settings,
   ShieldCheck,
+  SlidersHorizontal,
   Usb,
   Video,
   Wifi,
@@ -20,7 +23,9 @@ import {
 import { useEffect, useRef, useState } from 'react'
 import type { Device, LicenseStatus, Panel } from '../api/client'
 import { LICENSE_FEATURE_ENABLED } from '../config/features'
+import { useOperatorSession } from '../hooks/useOperatorSession'
 import { vi } from '../i18n/vi'
+import { BrandMark } from './BrandMark'
 import { SectionsQuickModal, subscribeSectionsQuickModal } from './SectionsQuickModal'
 
 type Props = {
@@ -46,6 +51,8 @@ const settingsNav = [
   { to: '/devices', label: vi.navDevices, icon: Radio },
   { to: '/cameras', label: vi.navCameras, icon: Video },
   { to: '/automation', label: vi.navAutomation, icon: Workflow },
+  { to: '/system', label: vi.navSystem, icon: SlidersHorizontal },
+  { to: '/backup', label: vi.navBackup, icon: Archive },
   ...(LICENSE_FEATURE_ENABLED
     ? [{ to: '/settings', label: vi.navSettings, icon: ShieldCheck }]
     : []),
@@ -60,6 +67,10 @@ function pathInSettings(pathname: string) {
     pathname.startsWith('/cameras/') ||
     pathname === '/automation' ||
     pathname.startsWith('/automation/') ||
+    pathname === '/system' ||
+    pathname.startsWith('/system/') ||
+    pathname === '/backup' ||
+    pathname.startsWith('/backup/') ||
     pathname === '/settings' ||
     pathname.startsWith('/settings/')
   )
@@ -79,13 +90,16 @@ export function AppShell({
   const mode = license?.mode ?? 'read-only'
   const full = mode === 'full'
   const location = useLocation()
+  const { session, canSettings, logout } = useOperatorSession()
   const settingsActive = pathInSettings(location.pathname)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [statusOpen, setStatusOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
   const [sectionsOpen, setSectionsOpen] = useState(false)
   const statusRef = useRef<HTMLDivElement>(null)
   const settingsRef = useRef<HTMLDivElement>(null)
+  const accountRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => subscribeSectionsQuickModal(() => setSectionsOpen(true)), [])
 
@@ -100,10 +114,11 @@ export function AppShell({
       ? 'ok'
       : 'warn'
   const clusterSummary = !wsConnected
-    ? vi.wsDown
+    ? vi.headerStatusDown
     : liveActive
-      ? vi.realtimeLive
-      : vi.realtimeIdle
+      ? vi.headerStatusLive
+      : vi.headerStatusIdle
+  const accountInitial = (session?.userName?.trim()?.charAt(0) || '?').toUpperCase()
 
   useEffect(() => {
     if (!mobileOpen) return
@@ -115,16 +130,18 @@ export function AppShell({
   }, [mobileOpen])
 
   useEffect(() => {
-    if (!statusOpen && !settingsOpen) return
+    if (!statusOpen && !settingsOpen && !accountOpen) return
     function onDoc(e: MouseEvent) {
       const t = e.target as Node
       if (!statusRef.current?.contains(t)) setStatusOpen(false)
       if (!settingsRef.current?.contains(t)) setSettingsOpen(false)
+      if (!accountRef.current?.contains(t)) setAccountOpen(false)
     }
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         setStatusOpen(false)
         setSettingsOpen(false)
+        setAccountOpen(false)
       }
     }
     document.addEventListener('mousedown', onDoc)
@@ -133,20 +150,13 @@ export function AppShell({
       document.removeEventListener('mousedown', onDoc)
       document.removeEventListener('keydown', onKey)
     }
-  }, [statusOpen, settingsOpen])
+  }, [statusOpen, settingsOpen, accountOpen])
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden">
       <header className="shrink-0 z-40 border-b border-line/80 bg-panel/85 backdrop-blur-md">
         <div className="flex w-full items-center gap-3 px-4 py-2.5 sm:gap-4 sm:px-5 lg:px-6">
-          <div className="min-w-0 shrink-0">
-            <p className="font-mono text-[9px] tracking-[0.14em] text-steel/60 uppercase leading-none">
-              {vi.brandSubtitle}
-            </p>
-            <h1 className="mt-0.5 truncate text-sm font-semibold tracking-tight text-ink sm:text-[15px]">
-              {vi.brandTitle} <span className="text-accent">{vi.brandAccent}</span>
-            </h1>
-          </div>
+          <BrandMark />
 
           <nav
             className="hidden min-w-0 flex-1 items-center justify-center lg:flex"
@@ -170,6 +180,7 @@ export function AppShell({
                   <span className="whitespace-nowrap">{item.label}</span>
                 </NavLink>
               ))}
+              {canSettings && (
               <div ref={settingsRef} className="relative">
                 <button
                   type="button"
@@ -181,6 +192,7 @@ export function AppShell({
                   aria-expanded={settingsOpen}
                   aria-haspopup="menu"
                   onClick={() => {
+                    setAccountOpen(false)
                     setStatusOpen(false)
                     setSettingsOpen((v) => !v)
                   }}
@@ -218,101 +230,168 @@ export function AppShell({
                   </div>
                 )}
               </div>
+              )}
             </div>
           </nav>
 
-          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-            <button
-              type="button"
-              className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold ring-1 transition ${
-                anyAlarm
-                  ? 'header-sections-alarm ring-danger/40'
-                  : anyArmed
-                    ? 'bg-warn/10 text-warn ring-warn/30 hover:bg-warn/15'
-                    : 'bg-mist text-steel ring-line/70 hover:bg-fog hover:text-ink'
-              }`}
-              title={vi.headerSectionsHint}
-              aria-haspopup="dialog"
-              aria-expanded={sectionsOpen}
-              onClick={() => {
-                setStatusOpen(false)
-                setSettingsOpen(false)
-                setSectionsOpen(true)
-              }}
-            >
-              <Rows3 className="size-3.5 shrink-0 opacity-90" />
-              <span className="hidden sm:inline">{vi.headerSections}</span>
-              <span
-                className={`size-1.5 rounded-full ${
-                  anyAlarm ? 'bg-danger animate-pulse' : anyArmed ? 'bg-warn' : 'bg-ok'
-                }`}
-              />
-            </button>
-            {/* Nhóm kết nối — dropdown giống Nhãn */}
-            <div ref={statusRef} className="relative">
+          <div className="ml-auto flex items-center gap-2">
+            <div className="inline-flex items-center gap-0.5 rounded-xl bg-mist/70 p-0.5 ring-1 ring-line/70">
               <button
                 type="button"
-                className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold ring-1 transition ${
-                  clusterTone === 'ok'
-                    ? 'bg-ok/10 text-ok ring-ok/25 hover:bg-ok/15'
-                    : clusterTone === 'danger'
-                      ? 'bg-danger/10 text-danger ring-danger/25 hover:bg-danger/15'
-                      : 'bg-mist text-steel ring-line/70 hover:bg-fog hover:text-ink'
+                className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition ${
+                  anyAlarm
+                    ? 'header-sections-alarm'
+                    : anyArmed
+                      ? 'bg-warn/10 text-warn hover:bg-warn/15'
+                      : 'text-steel hover:bg-fog hover:text-ink'
                 }`}
-                aria-expanded={statusOpen}
-                aria-haspopup="listbox"
-                title={vi.connectionStatusCluster}
+                title={vi.headerSectionsHint}
+                aria-haspopup="dialog"
+                aria-expanded={sectionsOpen}
                 onClick={() => {
+                  setAccountOpen(false)
+                  setStatusOpen(false)
                   setSettingsOpen(false)
-                  setStatusOpen((v) => !v)
+                  setSectionsOpen(true)
                 }}
               >
+                <Rows3 className="size-3.5 shrink-0 opacity-90" />
+                <span className="hidden sm:inline">{vi.headerSections}</span>
                 <span
                   className={`size-1.5 rounded-full ${
-                    clusterTone === 'ok'
-                      ? `bg-ok${liveActive ? ' animate-pulse' : ''}`
-                      : clusterTone === 'danger'
-                        ? 'bg-danger'
-                        : 'bg-steel'
+                    anyAlarm ? 'bg-danger animate-pulse' : anyArmed ? 'bg-warn' : 'bg-ok'
                   }`}
                 />
-                <span className="max-w-[8.5rem] truncate sm:max-w-[10rem]">{clusterSummary}</span>
-                <ChevronDown
-                  className={`size-3.5 opacity-70 transition ${statusOpen ? 'rotate-180' : ''}`}
-                />
               </button>
-              {statusOpen && (
-                <div
-                  role="listbox"
-                  aria-label={vi.connectionStatusCluster}
-                  className="absolute top-[calc(100%+4px)] right-0 z-50 min-w-[13.5rem] overflow-hidden rounded-lg bg-panel py-1 shadow-lg ring-1 ring-line"
+
+              <div className="mx-0.5 h-4 w-px bg-line/80" aria-hidden />
+
+              <div ref={statusRef} className="relative">
+                <button
+                  type="button"
+                  className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition ${
+                    statusOpen
+                      ? 'bg-fog text-ink'
+                      : clusterTone === 'danger'
+                        ? 'text-danger hover:bg-danger/10'
+                        : 'text-steel hover:bg-fog hover:text-ink'
+                  }`}
+                  aria-expanded={statusOpen}
+                  aria-haspopup="listbox"
+                  title={vi.connectionStatusCluster}
+                  onClick={() => {
+                    setAccountOpen(false)
+                    setSettingsOpen(false)
+                    setStatusOpen((v) => !v)
+                  }}
                 >
-                  <StatusRow
-                    icon={Wifi}
-                    label={wsConnected ? vi.wsLive : vi.wsDown}
-                    tone={wsConnected ? 'ok' : 'danger'}
+                  <span
+                    className={`size-1.5 rounded-full ${
+                      clusterTone === 'ok'
+                        ? `bg-ok${liveActive ? ' animate-pulse' : ''}`
+                        : clusterTone === 'danger'
+                          ? 'bg-danger'
+                          : 'bg-steel'
+                    }`}
                   />
-                  <StatusRow
-                    icon={Activity}
-                    label={liveActive ? vi.realtimeLive : vi.realtimeIdle}
-                    tone={liveActive ? 'ok' : 'neutral'}
-                    pulse={liveActive}
+                  <span className="hidden max-w-[7.5rem] truncate sm:inline">{clusterSummary}</span>
+                  <ChevronDown
+                    className={`size-3 opacity-70 transition ${statusOpen ? 'rotate-180' : ''}`}
                   />
-                  {mockMode != null && (
+                </button>
+                {statusOpen && (
+                  <div
+                    role="listbox"
+                    aria-label={vi.connectionStatusCluster}
+                    className="absolute top-[calc(100%+6px)] right-0 z-50 min-w-[13.5rem] overflow-hidden rounded-lg bg-panel py-1 shadow-lg ring-1 ring-line"
+                  >
                     <StatusRow
-                      icon={Usb}
-                      label={mockMode ? vi.usbMock : vi.usbHid}
-                      tone={mockMode ? 'warn' : 'ok'}
+                      icon={Wifi}
+                      label={wsConnected ? vi.wsLive : vi.wsDown}
+                      tone={wsConnected ? 'ok' : 'danger'}
                     />
-                  )}
-                  {LICENSE_FEATURE_ENABLED && (
                     <StatusRow
-                      icon={ShieldCheck}
-                      label={full ? vi.licenseFull : vi.licenseReadOnly}
-                      tone={full ? 'ok' : 'warn'}
+                      icon={Activity}
+                      label={liveActive ? vi.realtimeLive : vi.realtimeIdle}
+                      tone={liveActive ? 'ok' : 'neutral'}
+                      pulse={liveActive}
                     />
-                  )}
-                </div>
+                    {mockMode != null && (
+                      <StatusRow
+                        icon={Usb}
+                        label={mockMode ? vi.usbMock : vi.usbHid}
+                        tone={mockMode ? 'warn' : 'ok'}
+                      />
+                    )}
+                    {LICENSE_FEATURE_ENABLED && (
+                      <StatusRow
+                        icon={ShieldCheck}
+                        label={full ? vi.licenseFull : vi.licenseReadOnly}
+                        tone={full ? 'ok' : 'warn'}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {session && (
+                <>
+                  <div className="mx-0.5 hidden h-4 w-px bg-line/80 sm:block" aria-hidden />
+                  <div ref={accountRef} className="relative hidden sm:block">
+                    <button
+                      type="button"
+                      className={`inline-flex h-8 max-w-[10.5rem] items-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold transition ${
+                        accountOpen ? 'bg-fog text-ink' : 'text-steel hover:bg-fog hover:text-ink'
+                      }`}
+                      aria-expanded={accountOpen}
+                      aria-haspopup="menu"
+                      aria-label={vi.headerAccount}
+                      title={vi.headerAccount}
+                      onClick={() => {
+                        setStatusOpen(false)
+                        setSettingsOpen(false)
+                        setAccountOpen((v) => !v)
+                      }}
+                    >
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded-md bg-accent/15 text-[10px] font-bold text-accent">
+                        {accountInitial}
+                      </span>
+                      <span className="min-w-0 truncate text-ink">{session.userName}</span>
+                      <ChevronDown
+                        className={`size-3 shrink-0 opacity-70 transition ${accountOpen ? 'rotate-180' : ''}`}
+                      />
+                    </button>
+                    {accountOpen && (
+                      <div
+                        role="menu"
+                        aria-label={vi.headerAccount}
+                        className="absolute top-[calc(100%+6px)] right-0 z-50 min-w-[12rem] overflow-hidden rounded-lg bg-panel py-1 shadow-lg ring-1 ring-line"
+                      >
+                        <div className="px-3 py-2">
+                          <p className="truncate text-[12px] font-semibold text-ink">
+                            {session.userName}
+                          </p>
+                          <p className="mt-0.5 text-[10px] font-medium text-steel/70">
+                            {session.isAdmin ? vi.loginRoleAdmin : vi.loginRoleUser}
+                          </p>
+                        </div>
+                        <div className="mx-2 border-t border-line/80" />
+                        <button
+                          type="button"
+                          role="menuitem"
+                          className="flex w-full items-center gap-2 px-3 py-2 text-[13px] font-medium text-steel transition hover:bg-fog hover:text-ink"
+                          onClick={() => {
+                            setAccountOpen(false)
+                            logout()
+                          }}
+                        >
+                          <LogOut className="size-3.5 shrink-0 opacity-85" />
+                          {vi.logout}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
             </div>
 
@@ -322,7 +401,12 @@ export function AppShell({
               aria-expanded={mobileOpen}
               aria-controls="mobile-nav"
               aria-label={mobileOpen ? 'Đóng menu' : 'Mở menu'}
-              onClick={() => setMobileOpen((v) => !v)}
+              onClick={() => {
+                setAccountOpen(false)
+                setStatusOpen(false)
+                setSettingsOpen(false)
+                setMobileOpen((v) => !v)
+              }}
             >
               {mobileOpen ? <X className="size-4" /> : <Menu className="size-4" />}
             </button>
@@ -353,6 +437,8 @@ export function AppShell({
                   {item.label}
                 </NavLink>
               ))}
+              {canSettings && (
+                <>
               <p className="mt-2 px-3 pt-1 text-[10px] font-semibold tracking-[0.12em] text-steel/50 uppercase">
                 {vi.navSettingsMenu}
               </p>
@@ -373,13 +459,28 @@ export function AppShell({
                   {item.label}
                 </NavLink>
               ))}
+                </>
+              )}
+              {session && (
+                <button
+                  type="button"
+                  className="mt-2 flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-steel hover:bg-mist hover:text-ink"
+                  onClick={() => {
+                    setMobileOpen(false)
+                    logout()
+                  }}
+                >
+                  <LogOut className="size-4 shrink-0 opacity-85" />
+                  {vi.logout} · {session.userName}
+                </button>
+              )}
             </nav>
           </div>
         )}
       </header>
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-auto">
-        <Outlet />
+        {!canSettings && pathInSettings(location.pathname) ? <Navigate to="/" replace /> : <Outlet />}
       </main>
 
       <SectionsQuickModal

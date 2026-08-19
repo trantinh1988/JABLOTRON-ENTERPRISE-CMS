@@ -51,24 +51,23 @@ export type AlarmTrailSnapshot = {
 export function shouldAppendTrailPoint(
   last: AlarmTrailPoint | null,
   next: { deviceId: string; mapId: number; at: number },
-  openIds?: ReadonlySet<string>,
 ): boolean {
   const id = String(next.deviceId || '')
   if (!id || !Number.isFinite(next.mapId)) return false
   if (!last) return true
-  // HID / Instant phát lại khi đang alarm — không thêm số trên cùng thiết bị.
+  // HID / Instant phát lại ngay trên điểm vừa ghi — không nhân số.
+  // Quay lại thiết bị sau khi đã đi nơi khác (9 → 2 → 7 → 9) thì vẫn ghi.
   if (last.deviceId === id) return false
-  if (openIds?.has(id)) return false
   return true
 }
 
 export function appendTrailPoint(
   points: readonly AlarmTrailPoint[],
   next: { deviceId: string; mapId: number; at: number },
-  opts?: { openIds?: ReadonlySet<string>; maxPoints?: number },
+  opts?: { maxPoints?: number },
 ): AlarmTrailPoint[] {
   const last = points[points.length - 1] ?? null
-  if (!shouldAppendTrailPoint(last, next, opts?.openIds)) return points.slice()
+  if (!shouldAppendTrailPoint(last, next)) return points.slice()
   const seq = (last?.seq ?? 0) + 1
   const max = opts?.maxPoints ?? TRAIL_MAX_POINTS
   return [...points, { ...next, deviceId: String(next.deviceId), seq }].slice(-max)
@@ -216,23 +215,32 @@ export function alarmTrailSelfCheck(): string[] {
   check(!shouldAppendTrailPoint(a, { deviceId: 'D1', mapId: 1, at: 2500 }), 'consecutive same device')
   check(!shouldAppendTrailPoint(a, { deviceId: 'D1', mapId: 1, at: 9000 }), 'sticky retrigger')
   check(shouldAppendTrailPoint(a, { deviceId: 'D2', mapId: 1, at: 1100 }), 'other device')
-  check(
-    !shouldAppendTrailPoint(a, { deviceId: 'D2', mapId: 1, at: 4000 }, new Set(['D2'])),
-    'already open in session',
-  )
 
   const p1 = appendTrailPoint([], { deviceId: 'D1', mapId: 2, at: 1 })
-  const open = new Set(p1.map((p) => p.deviceId))
-  const p2 = appendTrailPoint(p1, { deviceId: 'D2', mapId: 2, at: 4000 }, { openIds: open })
-  open.add('D2')
-  const echo = appendTrailPoint(p2, { deviceId: 'D1', mapId: 2, at: 7000 }, { openIds: open })
-  check(echo.length === 2, 'no second number while D1 still alarm')
-  open.delete('D1')
-  const back = appendTrailPoint(p2, { deviceId: 'D1', mapId: 2, at: 9000 }, { openIds: open })
-  check(back.length === 3 && back[2]?.deviceId === 'D1', 'return after alarm cleared')
+  const p2 = appendTrailPoint(p1, { deviceId: 'D2', mapId: 2, at: 4000 })
+  const echo = appendTrailPoint(p2, { deviceId: 'D1', mapId: 2, at: 7000 })
+  check(echo.length === 3 && echo[2]?.deviceId === 'D1', 'return to D1 after other device')
 
+  const back = echo
   const same = appendTrailPoint(p1, { deviceId: 'D1', mapId: 2, at: 5000 })
   check(same.length === 1, 'consecutive skip')
+
+  let loop = appendTrailPoint([], { deviceId: 'Dev_9', mapId: 1, at: 1 })
+  loop = appendTrailPoint(loop, { deviceId: 'Dev_2', mapId: 1, at: 2 })
+  loop = appendTrailPoint(loop, { deviceId: 'Dev_7', mapId: 1, at: 3 })
+  loop = appendTrailPoint(loop, { deviceId: 'Dev_9', mapId: 1, at: 4 })
+  check(loop.length === 4 && loop[3]?.seq === 4 && loop[3]?.deviceId === 'Dev_9', '9→2→7→9 records return')
+  const loopStops = resolveTrailStops(loop, 1, (id) =>
+    id === 'Dev_9'
+      ? { x: 10, y: 10, label: '9' }
+      : id === 'Dev_2'
+        ? { x: 30, y: 10, label: '2' }
+        : id === 'Dev_7'
+          ? { x: 30, y: 30, label: '7' }
+          : null,
+  )
+  check(loopStops.length === 4, 'return visit is a second stop on same icon')
+  check(buildTrailSegments(loopStops, 4).length === 3, 'line Dev_7 → Dev_9 is drawn')
 
   const mixed = [
     { deviceId: 'A', mapId: 1, at: 1, seq: 1 },

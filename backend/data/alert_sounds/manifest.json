@@ -1,0 +1,27 @@
+{
+  "sound_enabled": true,
+  "trail_enabled": true,
+  "site_title": "Coopmart 230 Nguyễn Trãi",
+  "sounds": {
+    "alarm": {
+      "name": "sign0001.wav",
+      "url": "/media/alert-sounds/alarm_e16c9be915e74ff5b53fc02e61313a79.wav",
+      "type": "audio/wav"
+    },
+    "tamper": {
+      "name": "sign0006.wav",
+      "url": "/media/alert-sounds/tamper_30a12c06c91c43d2b25af5e38b47fbae.wav",
+      "type": "audio/wav"
+    },
+    "fault": {
+      "name": "sign0003.wav",
+      "url": "/media/alert-sounds/fault_c65c06151e7c47cbbea432c036dfc125.wav",
+      "type": "audio/wav"
+    },
+    "loss": {
+      "name": "sign0022.wav",
+      "url": "/media/alert-sounds/loss_36b8ecb6876649319b50f3a62cdd400a.wav",
+      "type": "audio/wav"
+    }
+  }
+}

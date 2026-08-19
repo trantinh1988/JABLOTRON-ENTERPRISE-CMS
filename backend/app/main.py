@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from typing import Any
 
-from app.api import automation, cameras, events, license, maps, panels, usb, ws
+from app.api import automation, cameras, events, license, maps, panels, system, usb, ws
 from app.api.maps import ensure_map_bg_dir
 from app.iot_core.automation_engine import (
     ensure_alarm_snap_dir,
@@ -18,7 +18,7 @@ from app.iot_core.automation_engine import (
 from app.iot_core.camera_service import ensure_camera_thumb_dir
 from app.core.config import get_settings
 from app.db.session import init_db
-from app.iot_core.event_store import register_event_persistence
+from app.iot_core.event_store import register_event_persistence, trim_history_events
 from app.iot_core.panel_bus import get_panel_bus
 from app.iot_core.panel_store import load_panels_into_bus
 from app.iot_core.usb_manager import get_usb_manager
@@ -29,6 +29,7 @@ from app.schemas.common import HealthOut
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     await init_db()
+    await trim_history_events()
     register_event_persistence()
     register_automation_engine()
     await get_automation_engine().reload()
@@ -38,6 +39,12 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     usb_mgr = get_usb_manager()
     await usb_mgr.start()
     _log_usb_startup(usb_mgr)
+    try:
+        from app.iot_core.host_ports import ensure_runtime_files
+
+        ensure_runtime_files()
+    except OSError:
+        pass
     try:
         yield
     finally:
@@ -102,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(events.router)
     app.include_router(cameras.router)
     app.include_router(automation.router)
+    app.include_router(system.router)
     app.include_router(ws.router)
 
     map_bg_dir = ensure_map_bg_dir()
@@ -127,6 +135,12 @@ def create_app() -> FastAPI:
         "/media/map-snaps",
         StaticFiles(directory=str(map_snap_dir)),
         name="map_snaps",
+    )
+    alert_sound_dir = system.media_dir()
+    app.mount(
+        "/media/alert-sounds",
+        StaticFiles(directory=str(alert_sound_dir)),
+        name="alert_sounds",
     )
     return app
 

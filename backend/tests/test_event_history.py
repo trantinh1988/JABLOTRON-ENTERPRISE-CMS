@@ -1,7 +1,12 @@
 from datetime import datetime, timezone
 
 from app.api.events import _as_int, _parse_bound
-from app.iot_core.event_store import audit_records, is_history_page_event, reset_audit_dedup
+from app.iot_core.event_store import (
+    audit_records,
+    history_overwrite_cutoff,
+    is_history_page_event,
+    reset_audit_dedup,
+)
 
 
 def test_parse_bound_date_start_vn():
@@ -130,6 +135,78 @@ def test_audit_skips_history_only_ok():
     assert rows == []
 
 
+def test_audit_collapses_alarm_trigger_with_state():
+    reset_audit_dedup()
+    state = audit_records(
+        {
+            "type": "device_state",
+            "panel_id": "PANEL_1",
+            "device_id": "PANEL_1_DEV_05",
+            "state": "alarm",
+        }
+    )
+    trigger = audit_records(
+        {
+            "type": "device_alarm_trigger",
+            "panel_id": "PANEL_1",
+            "device_id": "PANEL_1_DEV_05",
+            "state": "alarm",
+        }
+    )
+    assert len(state) == 1
+    assert trigger == []
+
+
+def test_audit_collapses_repeat_tamper_and_fault():
+    reset_audit_dedup()
+    first = audit_records(
+        {
+            "type": "device_state",
+            "panel_id": "PANEL_1",
+            "device_id": "PANEL_1_DEV_03",
+            "state": "tamper",
+        }
+    )
+    echo = audit_records(
+        {
+            "type": "device_state",
+            "panel_id": "PANEL_1",
+            "device_id": "PANEL_1_DEV_03",
+            "state": "tamper",
+        }
+    )
+    assert len(first) == 1
+    assert echo == []
+    fault = audit_records(
+        {
+            "type": "device_state",
+            "panel_id": "PANEL_1",
+            "device_id": "PANEL_1_DEV_04",
+            "state": "fault",
+        }
+    )
+    assert len(fault) == 1
+    assert (
+        audit_records(
+            {
+                "type": "device_state",
+                "panel_id": "PANEL_1",
+                "device_id": "PANEL_1_DEV_04",
+                "state": "fault",
+            }
+        )
+        == []
+    )
+
+
+def test_audit_same_map_trail_collapses():
+    reset_audit_dedup()
+    a = audit_records({"type": "map_trail_snap", "map_id": 1, "map_name": "Tầng 1"})
+    b = audit_records({"type": "map_trail_snap", "map_id": 1, "map_name": "Tầng 1"})
+    assert len(a) == 1
+    assert b == []
+
+
 def test_is_history_page_event():
     assert is_history_page_event({"type": "device_state", "state": "alarm"})
     assert is_history_page_event({"type": "device_state", "state": "tamper"})
@@ -142,3 +219,13 @@ def test_is_history_page_event():
     assert not is_history_page_event({"type": "device_state", "state": "loss"})
     assert not is_history_page_event({"type": "zone_armed"})
     assert not is_history_page_event({"type": "automation_fired"})
+
+
+def test_history_overwrite_cutoff():
+    assert history_overwrite_cutoff(None) is None
+    assert history_overwrite_cutoff(1_000_000) is None
+    assert history_overwrite_cutoff(1_000_001) == 1
+    assert history_overwrite_cutoff(1_000_500) == 500
+    assert history_overwrite_cutoff(6, keep=5) == 1
+    assert history_overwrite_cutoff(5, keep=5) is None
+    assert history_overwrite_cutoff(10, keep=0) is None

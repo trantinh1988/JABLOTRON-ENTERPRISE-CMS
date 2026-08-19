@@ -1,5 +1,6 @@
 import type { CmsEvent, Device } from '../api/client'
 import { effectiveDeviceStatus } from '../i18n/vi'
+import { playAlertSound } from '../lib/alarmSounds'
 import { appendAlarmTrailPoint } from './alarmTrailBus'
 import {
   getAlarmFocusQueue,
@@ -15,6 +16,12 @@ let primed = false
 type PendingTrigger = { deviceId: string; mapId?: unknown; at: number; force: boolean }
 let pendingTriggers: PendingTrigger[] = []
 const PENDING_TTL_MS = 60_000
+
+function playNonAlarmStatusSound(st: string, prev: string | undefined): void {
+  if (prev == null || prev === st) return
+  if (st !== 'tamper' && st !== 'fault' && st !== 'loss') return
+  void playAlertSound(st)
+}
 
 function rememberPending(deviceId: string, mapId?: unknown, force = false): void {
   const id = String(deviceId)
@@ -120,6 +127,7 @@ export function watchAlarmFocusFromEvent(event: CmsEvent): void {
     const st = effectiveDeviceStatus(String(event.state), disable)
     const prev = statusById[id]
     statusById[id] = st
+    playNonAlarmStatusSound(st, prev)
     if (st === 'alarm' && prev !== 'alarm') {
       focusAlarmAfterUiApply(id, event.map_id ?? mapIdByDevice[id] ?? null)
     }
@@ -136,6 +144,7 @@ export function watchAlarmFocusFromEvent(event: CmsEvent): void {
       const st = effectiveDeviceStatus(state)
       const prev = statusById[deviceId]
       statusById[deviceId] = st
+      playNonAlarmStatusSound(st, prev)
       if (st === 'alarm' && prev !== 'alarm') {
         focusAlarmAfterUiApply(deviceId, mapIdByDevice[deviceId] ?? null)
       }

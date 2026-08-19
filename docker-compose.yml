@@ -1,23 +1,22 @@
 # Jablotron Enterprise CMS — Docker Compose
 #
-# ► Linux + USB thật (OptiPlex / server — KHUYẾN NGHỊ):
-#     bash scripts/deploy-usb-linux.sh
-#     (Backend native port 8010 + UI Docker port 8080 — port 8000 thường bị aaPanel chiếm)
+# Máy USB (Windows/Linux): UI Docker + backend native :8010
+#   Windows: .\scripts\deploy-usb-windows.ps1
+#   Linux:   ./scripts/deploy-usb-linux.sh
 #
-# ► Chỉ UI (backend đã chạy native):
-#     docker compose -f docker-compose.usb-host.yml up -d --build
+# Backend trong Docker (mock, không USB) — chỉ khi cố ý:
+#   docker compose --profile all-in-docker up -d --build
 #
-# ► Full Docker (mock / không USB):
-#     docker compose up -d --build
-#
-# ► Demo không phần cứng: đổi CMS_USB_MOCK_MODE thành "true"
+# Không chạy `docker compose up` kèm service backend trên máy USB:
+# container đó tranh cms.db và làm nginx 502.
 
 services:
   backend:
+    profiles: ["all-in-docker"]
     build:
       context: ./backend
     container_name: jablotron-cms-backend
-    restart: unless-stopped
+    restart: "no"
     volumes:
       - ./keys:/keys:ro
       - ./backend/data:/app/data
@@ -30,7 +29,6 @@ services:
       CMS_DATABASE_URL: sqlite+aiosqlite:////app/data/cms.db
       CMS_HWID_CACHE_PATH: /app/data/hwid.cache
       CMS_CORS_ORIGINS: "http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173"
-    # USB HID — cần privileged + /dev/bus/usb (hidraw cho hidapi trên Linux)
     privileged: true
     expose:
       - "8000"
@@ -41,6 +39,8 @@ services:
     container_name: jablotron-cms-frontend
     restart: unless-stopped
     ports:
-      - "8080:80"
-    depends_on:
-      - backend
+      - "${CMS_UI_PORT:-8080}:80"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./backend/data/nginx-ui.conf:/etc/nginx/conf.d/default.conf:ro

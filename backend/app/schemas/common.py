@@ -474,3 +474,91 @@ class AutomationSnapOut(BaseModel):
     device_id: str | None = None
     image_url: str = ""
     created_at: str | None = None
+
+
+class AlertSoundSlotOut(BaseModel):
+    name: str
+    url: str
+    type: str = ""
+
+
+class SystemSettingsOut(BaseModel):
+    sound_enabled: bool = False
+    trail_enabled: bool = True
+    site_title: str = ""
+    sounds: dict[str, AlertSoundSlotOut | None] = Field(
+        default_factory=lambda: {"alarm": None, "tamper": None, "fault": None, "loss": None}
+    )
+
+
+class SystemSettingsPatchIn(BaseModel):
+    sound_enabled: bool | None = None
+    trail_enabled: bool | None = None
+    site_title: str | None = Field(None, max_length=80)
+
+
+class HostServiceOut(BaseModel):
+    ok: bool = True
+    os: str
+    autostart_supported: bool = False
+    autostart_enabled: bool = False
+    autostart_label: str = ""
+    start_script: str = ""
+    docker_ok: bool | None = None
+    usb_mock_mode: bool = False
+    usb_hid_available: bool = False
+    usb_devices_found: int = 0
+    usb_panels_connected: int = 0
+    usb_last_error: str | None = None
+    detail: str | None = None
+
+
+class HostAutostartIn(BaseModel):
+    enabled: bool
+
+
+class HostPortsOut(BaseModel):
+    ui_port: int
+    api_port: int
+    ui_port_default: int = 8080
+    api_port_default: int = 8010
+    ui_url: str
+    api_url: str
+    os: str = "other"
+    applied: bool | None = None
+    detail: str | None = None
+    start_script: str = ""
+
+
+class HostPortsIn(BaseModel):
+    ui_port: int
+    api_port: int
+
+
+class BackupInfoOut(BaseModel):
+    format: str = "jablotron-cms-backup"
+    version: int = 1
+    panels: int = 0
+    devices: int = 0
+    maps: int = 0
+    map_backgrounds: int = 0
+    cameras: int = 0
+    automation_rules: int = 0
+    events: int = 0
+    extra_files: int = 0
+    approx_bytes: int = 0
+
+
+class BackupRestoreOut(BaseModel):
+    ok: bool = True
+    panels: int = 0
+    devices: int = 0
+    maps: int = 0
+    map_backgrounds: int = 0
+    cameras: int = 0
+    automation_rules: int = 0
+    events: int = 0
+    extra_files: int = 0
+    approx_bytes: int = 0
+    created_at: str | None = None
+    detail: str | None = None

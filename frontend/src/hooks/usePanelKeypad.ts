@@ -19,12 +19,14 @@ import {
   vi,
 } from '../i18n/vi'
 import { reactionAlarmsWhenDisarmed } from '../lib/deviceReaction'
+import { sessionMatchOnPanel } from '../lib/operatorSession'
 import {
   panelControllable,
   pinCommandErrorMessage,
   pinUsersOf,
   resolvePinUser,
 } from '../lib/pinAuth'
+import { useOperatorSession } from './useOperatorSession'
 
 export type LastAction = {
   at: string
@@ -101,6 +103,7 @@ export function usePanelKeypad({
     [zones],
   )
 
+  const { session } = useOperatorSession()
   const pinUsers = useMemo(() => pinUsersOf(users), [users])
 
   useEffect(() => {
@@ -130,46 +133,6 @@ export function usePanelKeypad({
     [panel, writeAllowed, mockMode, pinUsers.length],
   )
 
-  const requestSection = useCallback(
-    (zone: Zone, action: 'arm' | 'disarm') => {
-      if (!gateRequest(action)) return
-
-      const already =
-        (action === 'arm' && (zone.armed_state === 'armed' || zone.armed_state === 'partial')) ||
-        (action === 'disarm' && zone.armed_state === 'disarmed')
-      if (already) {
-        if (action === 'disarm' && alwaysAlarmIdsInZone(devices, zone.zone_id).length) {
-          setError(null)
-          setMessage(null)
-          setPinError(null)
-          setPending({ zone, action: 'silence' })
-          return
-        }
-        setError(null)
-        setMessage(`${labelOf(armedStateLabel, zone.armed_state)} · ${zone.name}`)
-        return
-      }
-
-      setError(null)
-      setMessage(null)
-      setPinError(null)
-      setPending({ zone, action })
-    },
-    [gateRequest, devices],
-  )
-
-  const requestSilence = useCallback(
-    (zone: Zone) => {
-      if (!alwaysAlarmIdsInZone(devices, zone.zone_id).length) return
-      if (!gateRequest('silence')) return
-      setError(null)
-      setMessage(null)
-      setPinError(null)
-      setPending({ zone, action: 'silence' })
-    },
-    [devices, gateRequest],
-  )
-
   const cancelPending = useCallback(() => {
     if (busy) return
     setPending(null)
@@ -178,18 +141,19 @@ export function usePanelKeypad({
 
   const clearPinError = useCallback(() => setPinError(null), [])
 
-  const confirmSectionWithPin = useCallback(
-    async (pin: string) => {
-      if (!panel || !pending) return
+  const executeWithPin = useCallback(
+    async (job: PendingSectionAction, pin: string) => {
+      if (!panel) return
 
-      const need = pending.action === 'arm' ? 'arm' : 'disarm'
+      const need = job.action === 'arm' ? 'arm' : 'disarm'
       const resolved = resolvePinUser(pinUsers, pin, need)
       if ('error' in resolved) {
         setPinError(resolved.error)
+        setPending(job)
         return
       }
 
-      const { zone, action } = pending
+      const { zone, action } = job
       const silence = action === 'silence'
       const nextArmed = action === 'arm' ? 'armed' : 'disarmed'
       const zoneId = zone.zone_id
@@ -203,6 +167,7 @@ export function usePanelKeypad({
         const pinMsg = pinCommandErrorMessage(raw)
         if (pinMsg) {
           setPinError(pinMsg)
+          setPending(job)
           return
         }
         setPending(null)
@@ -210,7 +175,6 @@ export function usePanelKeypad({
       }
 
       try {
-        // Tắt 24h trên phân khu: PIN CMS (ack). Bật/tắt bảo vệ mới gửi HID xuống tủ.
         if (!silence && panelControllable(panel, mockMode)) {
           const result = await groupAction(
             [panel.panel_id],
@@ -224,6 +188,7 @@ export function usePanelKeypad({
             const pinCode = codes.find((c) => pinCommandErrorMessage(c))
             if (pinCode) {
               setPinError(pinCommandErrorMessage(pinCode) ?? formatCommandError(pinCode))
+              setPending(job)
               return
             }
             setPending(null)
@@ -289,7 +254,6 @@ export function usePanelKeypad({
     },
     [
       panel,
-      pending,
       pinUsers,
       zones,
       devices,
@@ -299,6 +263,70 @@ export function usePanelKeypad({
       onRefresh,
       onArmedSuccess,
     ],
+  )
+
+  const enqueueJob = useCallback(
+    (job: PendingSectionAction) => {
+      setError(null)
+      setMessage(null)
+      setPinError(null)
+      const pin = session?.pin
+      if (pin && !session.setup) {
+        if (panel && !sessionMatchOnPanel(session, panel.panel_id)) {
+          setError(vi.sessionPanelMissing)
+          return
+        }
+        const need = job.action === 'arm' ? 'arm' : 'disarm'
+        const resolved = resolvePinUser(pinUsers, pin, need)
+        if ('error' in resolved) {
+          setError(resolved.error)
+          return
+        }
+        void executeWithPin(job, pin)
+        return
+      }
+      setPending(job)
+    },
+    [session, panel, pinUsers, executeWithPin],
+  )
+
+  const requestSection = useCallback(
+    (zone: Zone, action: 'arm' | 'disarm') => {
+      if (!gateRequest(action)) return
+
+      const already =
+        (action === 'arm' && (zone.armed_state === 'armed' || zone.armed_state === 'partial')) ||
+        (action === 'disarm' && zone.armed_state === 'disarmed')
+      if (already) {
+        if (action === 'disarm' && alwaysAlarmIdsInZone(devices, zone.zone_id).length) {
+          enqueueJob({ zone, action: 'silence' })
+          return
+        }
+        setError(null)
+        setMessage(`${labelOf(armedStateLabel, zone.armed_state)} · ${zone.name}`)
+        return
+      }
+
+      enqueueJob({ zone, action })
+    },
+    [gateRequest, devices, enqueueJob],
+  )
+
+  const requestSilence = useCallback(
+    (zone: Zone) => {
+      if (!alwaysAlarmIdsInZone(devices, zone.zone_id).length) return
+      if (!gateRequest('silence')) return
+      enqueueJob({ zone, action: 'silence' })
+    },
+    [devices, gateRequest, enqueueJob],
+  )
+
+  const confirmSectionWithPin = useCallback(
+    async (pin: string) => {
+      if (!pending) return
+      await executeWithPin(pending, pin)
+    },
+    [pending, executeWithPin],
   )
 
   return {

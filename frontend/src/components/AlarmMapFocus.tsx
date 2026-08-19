@@ -5,6 +5,7 @@ import {
   type AlarmMapFocusRequest,
 } from '../hooks/alarmMapFocusBus'
 import { alertBrowserOnAlarm } from '../lib/alarmBrowserAlert'
+import { hydrateAlertSounds, playAlertSound } from '../lib/alarmSounds'
 
 function isMapsPath(pathname: string): boolean {
   return pathname === '/maps' || pathname.endsWith('/maps')
@@ -24,6 +25,7 @@ export function AlarmMapFocus() {
   const lastToken = useRef(0)
 
   useEffect(() => {
+    void hydrateAlertSounds()
     return subscribeAlarmMapFocus((req: AlarmMapFocusRequest) => {
       if (req.token === lastToken.current) return
       lastToken.current = req.token
@@ -46,6 +48,7 @@ export function AlarmMapFocus() {
             }
           },
         })
+        void playAlertSound('alarm')
       } catch {
         /* không chặn navigate */
       }

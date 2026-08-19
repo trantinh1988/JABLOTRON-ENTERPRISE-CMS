@@ -17,8 +17,10 @@ import { exportHistoryExcel, exportHistoryPdf } from '../lib/historyExport'
 import {
   buildHistoryRow,
   dateInputVn,
+  dedupeHistoryEvents,
   eventTypeOptions,
   expandHistoryEvents,
+  historyIncidentKey,
   formatSnapTs,
   matchSmartQuery,
   rangeBounds,
@@ -136,15 +138,14 @@ export function HistoryPage({ panels, devices, liveEvents, eventSeq }: Props) {
     }
     if (!nextEvents.length) return
     setEvents((prev) => {
-      let merged = prev
-      for (const e of nextEvents) {
-        const key = `${e.ts}-${e.type}-${e.device_id ?? ''}-${e.panel_id ?? ''}-${e.zone_id ?? ''}`
-        if (merged.some((p) => `${p.ts}-${p.type}-${p.device_id ?? ''}-${p.panel_id ?? ''}-${p.zone_id ?? ''}` === key)) {
-          continue
-        }
-        merged = [e, ...merged]
+      const merged = dedupeHistoryEvents([...nextEvents, ...prev]).slice(0, 400)
+      if (
+        merged.length === prev.length &&
+        merged.every((e, i) => historyIncidentKey(e) === historyIncidentKey(prev[i]) && e.ts === prev[i].ts)
+      ) {
+        return prev
       }
-      return merged === prev ? prev : merged.slice(0, 400)
+      return merged
     })
   }, [eventSeq, liveEvents, panelFilter, typeFilter, bounds.since, bounds.until])
 
@@ -237,7 +238,7 @@ export function HistoryPage({ panels, devices, liveEvents, eventSeq }: Props) {
           until: bounds.until,
           history_page: true,
         })
-        exportRows = extra
+        exportRows = expandHistoryEvents(extra)
           .map((e, i) => buildHistoryRow(e, i, panels, devices, zoneMap, snaps))
           .filter((row) => {
             if (statusFilter && row.statusKey !== statusFilter) return false
@@ -266,7 +267,6 @@ export function HistoryPage({ panels, devices, liveEvents, eventSeq }: Props) {
     <div className="w-full px-4 py-4 sm:px-5 lg:px-6 lg:py-5">
       <PageHeader
         title={vi.historyPageTitle}
-        hint={vi.historyPageHint}
         actions={
           <Btn tone="ghost" onClick={() => setExportOpen(true)}>
             <FileDown className="size-3.5" />

@@ -1,8 +1,10 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AlarmMapFocus } from './components/AlarmMapFocus'
 import { AppShell } from './components/AppShell'
+import { UiLoginGate } from './components/UiLoginScreen'
 import { LICENSE_FEATURE_ENABLED } from './config/features'
 import { useCmsData } from './hooks/useCmsData'
+import { OperatorSessionProvider } from './hooks/useOperatorSession'
 import { DashboardPage } from './pages/DashboardPage'
 import { DevicesPage } from './pages/DevicesPage'
 import { HistoryPage } from './pages/HistoryPage'
@@ -12,14 +14,18 @@ import { AutomationPage } from './pages/AutomationPage'
 import { CameraManagementPage } from './pages/CameraManagementPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { StatusPage } from './pages/StatusPage'
+import { SystemSettingsPage } from './pages/SystemSettingsPage'
+import { BackupPage } from './pages/BackupPage'
 
 export default function App() {
   const data = useCmsData()
 
   return (
     <BrowserRouter>
-      <AlarmMapFocus />
-      <Routes>
+      <OperatorSessionProvider panels={data.panels} cmsReady={data.cmsReady}>
+        <UiLoginGate>
+          <AlarmMapFocus />
+          <Routes>
         <Route
           element={
             <AppShell
@@ -135,6 +141,22 @@ export default function App() {
               />
             }
           />
+          <Route
+            path="system"
+            element={
+              <SystemSettingsPage
+                writeAllowed={data.writeAllowed}
+                panels={data.panels}
+                onRefresh={data.refresh}
+              />
+            }
+          />
+          <Route
+            path="backup"
+            element={
+              <BackupPage writeAllowed={data.writeAllowed} onRefresh={data.refresh} />
+            }
+          />
           {LICENSE_FEATURE_ENABLED && (
             <Route
               path="settings"
@@ -144,6 +166,8 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
+        </UiLoginGate>
+      </OperatorSessionProvider>
     </BrowserRouter>
   )
 }

@@ -1,6 +1,7 @@
 import type { LicenseStatus } from '../api/client'
 import { LICENSE_FEATURE_ENABLED } from '../config/features'
 import { vi } from '../i18n/vi'
+import { BrandMark } from './BrandMark'
 
 type Props = {
   license: LicenseStatus | null
@@ -16,14 +17,11 @@ export function TopBar({ license, wsConnected, mockMode }: Props) {
   return (
     <header className="border-b border-line/80 bg-panel/70 backdrop-blur-md">
       <div className="flex w-full items-center justify-between gap-4 px-4 py-3 sm:px-5 lg:px-6">
-        <div className="min-w-0">
-          <p className="font-mono text-[11px] tracking-[0.14em] text-steel/60 uppercase">
-            {vi.brandSubtitle}
-          </p>
-          <h1 className="truncate text-xl font-semibold tracking-tight text-ink sm:text-2xl">
-            {vi.brandTitle} <span className="text-accent">{vi.brandAccent}</span>
-          </h1>
-        </div>
+        <BrandMark
+          className="min-w-0"
+          subtitleClass="font-mono text-[11px] tracking-[0.14em] text-steel/60 uppercase"
+          titleClass="truncate text-xl font-semibold tracking-tight text-ink sm:text-2xl"
+        />
 
         <div className="flex flex-wrap items-center justify-end gap-2">
           <StatusChip

@@ -5,6 +5,7 @@ import {
   listAllDevices,
   listMaps,
   listPanels,
+  activatePanelDeviceStream,
   type Device,
   type FloorMap,
   type LicenseStatus,
@@ -70,6 +71,7 @@ export function useCmsData() {
   const [liveSyncAt, setLiveSyncAt] = useState<number | null>(null)
   const [liveActive, setLiveActive] = useState(false)
   const [liveFlashIds, setLiveFlashIds] = useState<Set<string>>(() => new Set())
+  const [cmsReady, setCmsReady] = useState(false)
 
   const devicesRef = useRef(devices)
   devicesRef.current = devices
@@ -82,6 +84,7 @@ export function useCmsData() {
   const refreshInFlightRef = useRef(0)
   const failStreakRef = useRef(0)
   const pulseHoldRef = useRef(new DevicePulseHold())
+  const streamRetryRef = useRef<Record<string, number>>({})
 
   const commitDevices = useCallback((next: Device[]) => {
     devicesRef.current = next
@@ -158,6 +161,8 @@ export function useCmsData() {
       if (failStreakRef.current >= 2 || !panelsRef.current.length) {
         setLoadError(msg)
       }
+    } finally {
+      if (requestId === refreshInFlightRef.current) setCmsReady(true)
     }
   }, [])
 
@@ -490,6 +495,25 @@ export function useCmsData() {
   const streamLive =
     connected && panels.some((p) => p.device_stream_ok === true)
 
+  useEffect(() => {
+    if (!writeAllowed) return
+    for (const panel of panels) {
+      if (panel.connection !== 'usb') {
+        streamRetryRef.current[panel.panel_id] = 0
+        continue
+      }
+      if (panel.device_stream_ok) {
+        streamRetryRef.current[panel.panel_id] = 0
+        continue
+      }
+      if (!panel.has_stream_code) continue
+      const tries = streamRetryRef.current[panel.panel_id] || 0
+      if (tries >= 1) continue
+      streamRetryRef.current[panel.panel_id] = 1
+      void activatePanelDeviceStream(panel.panel_id).catch(() => undefined)
+    }
+  }, [panels, writeAllowed])
+
   return {
     license,
     panels,
@@ -506,6 +530,7 @@ export function useCmsData() {
     liveActive: liveActive || streamLive,
     liveFlashIds,
     writeAllowed,
+    cmsReady,
     refresh,
     setDevices,
     setMaps,

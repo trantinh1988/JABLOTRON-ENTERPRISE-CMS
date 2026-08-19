@@ -10,7 +10,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 
 from app.db.models import EventRecord
 from app.db.session import SessionLocal
@@ -38,8 +38,10 @@ _HISTORY_PAGE_TYPES = frozenset(
 )
 _HISTORY_PAGE_STATES = frozenset({"alarm", "tamper", "fault"})
 
-# Same arm/device transition within this window is HID+CMS echo, not a new action.
-_DEDUP_SEC = 2.0
+# Same device/status (or map/panel) within this window is one activation, not two rows.
+_DEDUP_SEC = 3.0
+# Ring buffer: newest 1_000_000 rows; older events are overwritten (deleted).
+MAX_HISTORY_EVENTS = 1_000_000
 _recent_audit: dict[str, float] = {}
 
 
@@ -48,12 +50,23 @@ def reset_audit_dedup() -> None:
 
 
 def _audit_key(event: dict[str, Any]) -> str:
+    event_type = str(event.get("type") or "")
+    panel_id = str(event.get("panel_id") or "")
+    device_id = str(event.get("device_id") or "")
+    if event_type == "device_alarm_trigger":
+        return "|".join(["device", panel_id, device_id, "alarm"])
+    if event_type == "device_state":
+        return "|".join(["device", panel_id, device_id, str(event.get("state") or "").lower()])
+    if event_type == "map_trail_snap":
+        return "|".join(["map_trail", str(event.get("map_id") or "")])
+    if event_type == "panel_updated":
+        return "|".join(["panel_updated", panel_id])
     return "|".join(
         [
-            str(event.get("type") or ""),
-            str(event.get("panel_id") or ""),
+            event_type,
+            panel_id,
             str(event.get("zone_id") or ""),
-            str(event.get("device_id") or ""),
+            device_id,
             str(event.get("map_id") or ""),
             str(event.get("armed_state") or event.get("state") or ""),
         ]
@@ -123,6 +136,36 @@ def audit_records(event: dict[str, Any]) -> list[dict[str, Any]]:
     return [event]
 
 
+def history_overwrite_cutoff(max_id: int | None, keep: int = MAX_HISTORY_EVENTS) -> int | None:
+    """Oldest id (inclusive) to delete so at most ``keep`` newest rows remain."""
+    if max_id is None or keep <= 0 or max_id <= keep:
+        return None
+    return max_id - keep
+
+
+async def _trim_history(session: Any, keep: int = MAX_HISTORY_EVENTS) -> int:
+    max_id = await session.scalar(select(func.max(EventRecord.id)))
+    cutoff = history_overwrite_cutoff(int(max_id) if max_id is not None else None, keep)
+    if cutoff is None:
+        return 0
+    result = await session.execute(delete(EventRecord).where(EventRecord.id <= cutoff))
+    return int(result.rowcount or 0)
+
+
+async def trim_history_events(keep: int = MAX_HISTORY_EVENTS) -> int:
+    """Drop oldest history rows until at most ``keep`` remain."""
+    try:
+        async with SessionLocal() as session:
+            deleted = await _trim_history(session, keep)
+            if deleted:
+                await session.commit()
+                log.info("Lịch sử overwrite: đã xóa %s sự kiện cũ (giữ %s).", deleted, keep)
+            return deleted
+    except Exception:
+        log.exception("Không trim được sự kiện lịch sử")
+        return 0
+
+
 async def persist_event(event: dict[str, Any]) -> None:
     rows = audit_records(event)
     if not rows:
@@ -138,6 +181,8 @@ async def persist_event(event: dict[str, Any]) -> None:
                         payload_json=json.dumps(row, ensure_ascii=False),
                     )
                 )
+            await session.flush()
+            await _trim_history(session)
             await session.commit()
     except Exception:
         log.exception("Không ghi được sự kiện lịch sử: %s", event.get("type"))

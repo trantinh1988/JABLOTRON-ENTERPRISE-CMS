@@ -1,12 +1,7 @@
 import { useMemo } from 'react'
 import type { Device, FloorMap, Panel } from '../api/client'
 import { MapTile } from './MapTile'
-import {
-  assignSlot,
-  layoutCols,
-  layoutRows,
-  type MapGridLayout,
-} from '../lib/mapGridLayout'
+import { assignSlot, layoutCols, layoutRows, type MapGridLayout } from '../lib/mapGridLayout'
 import type { MapMarkerLabelMode } from '../lib/deviceIconLibrary'
 import type { AlarmTrailPoint } from '../lib/alarmTrail'
 import { vi } from '../i18n/vi'
@@ -64,6 +59,11 @@ export function MapGridView({
   }, [devices])
 
   const mapById = useMemo(() => new Map(maps.map((m) => [m.id, m])), [maps])
+  const cells = useMemo(() => {
+    const next: (number | null)[] = slots.slice(0, layout)
+    while (next.length < layout) next.push(null)
+    return next
+  }, [slots, layout])
 
   return (
     <div
@@ -75,7 +75,7 @@ export function MapGridView({
       role="group"
       aria-label={vi.mapGridLayoutHint}
     >
-      {slots.map((mapId, index) => {
+      {cells.map((mapId, index) => {
         const floor = mapId != null ? (mapById.get(mapId) ?? null) : null
         const tileDevices = floor ? (byMap.get(floor.id) ?? []) : []
         return (
@@ -91,14 +91,10 @@ export function MapGridView({
             trailPoints={trailPoints}
             canTrailSnap={canTrailSnap}
             trailSnapBusy={floor != null && trailSnapBusyMapId === floor.id}
-            onTrailSnap={
-              onTrailSnap && floor
-                ? (blob) => onTrailSnap(floor.id, blob)
-                : undefined
-            }
+            onTrailSnap={onTrailSnap && floor ? (blob) => onTrailSnap(floor.id, blob) : undefined}
             onTrailSnapError={onTrailSnapError}
             alarmFocus={floor != null && alarmMapId === floor.id}
-            onAssign={(id) => onSlotsChange(assignSlot(slots, index, id))}
+            onAssign={(id) => onSlotsChange(assignSlot(cells, index, id))}
             onSelectDevice={onSelectDevice}
             onExpand={() => {
               if (floor) onExpandMap(floor.id)

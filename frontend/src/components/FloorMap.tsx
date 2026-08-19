@@ -6,16 +6,13 @@ import {
   formatMapDeviceCaption,
   mapStatusColor,
   mapStatusGlow,
+  mapStatusLegendLabel,
   mapStatusShouldPulse,
   MAP_STATUS_LEGEND,
   resolveDeviceIconKey,
 } from '../lib/deviceIconLibrary'
 import {
-  deviceIconLabel,
-  deviceStateLabel,
-  deviceTypeLabel,
   effectiveDeviceStatus,
-  labelOf,
   vi,
 } from '../i18n/vi'
 import { MapReactionChip } from './ReactionBadge'
@@ -159,13 +156,7 @@ export function FloorMapView({ panels, devices, focusPanelId }: Props) {
                 >
                   {formatMapDeviceCaption(d)}
                 </text>
-                <title>
-                  {formatMapDeviceCaption(d)} · {d.global_id} ·{' '}
-                  {labelOf(deviceIconLabel, icon) || labelOf(deviceTypeLabel, d.device_type)}
-                  {d.model ? ` · ${d.model}` : ''}
-                  {d.link === 'rf' ? ' · RF' : d.link === 'bus' ? ' · Bus' : ''} ·{' '}
-                  {labelOf(deviceStateLabel, status)}
-                </title>
+                <title>{`${formatMapDeviceCaption(d)} | ${mapStatusLegendLabel(status)}`}</title>
               </g>
             )
           })}

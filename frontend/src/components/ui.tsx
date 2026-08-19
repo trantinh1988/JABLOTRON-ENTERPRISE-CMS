@@ -23,11 +23,17 @@ export function PageHeader({
 export function Card({
   children,
   className = '',
+  id,
 }: {
   children: ReactNode
   className?: string
+  id?: string
 }) {
-  return <section className={`panel-card p-4 ${className}`}>{children}</section>
+  return (
+    <section id={id} className={`panel-card p-4 ${className}`}>
+      {children}
+    </section>
+  )
 }
 
 export function Btn({
@@ -94,6 +100,41 @@ export function StateDot({ state }: { state: string; disable?: string }) {
           ? 'bg-warn'
           : 'bg-ok'
   return <span className={`inline-block size-2 rounded-full ${color}`} />
+}
+
+export function Toggle({
+  checked,
+  onChange,
+  disabled,
+  id,
+  label,
+}: {
+  checked: boolean
+  onChange: (next: boolean) => void
+  disabled?: boolean
+  id?: string
+  label?: string
+}) {
+  return (
+    <button
+      id={id}
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-40 ${
+        checked ? 'bg-accent' : 'bg-line'
+      }`}
+    >
+      <span
+        className={`inline-block size-5 rounded-full bg-panel shadow-sm ring-1 ring-black/20 transition ${
+          checked ? 'translate-x-[1.35rem]' : 'translate-x-0.5'
+        }`}
+      />
+    </button>
+  )
 }
 
 /** Dot color for Disable column only (F-Link circle colors). */

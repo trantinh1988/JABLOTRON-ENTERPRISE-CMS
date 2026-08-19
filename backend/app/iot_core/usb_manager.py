@@ -127,6 +127,7 @@ class UsbDeviceManager:
         self._scanned_devices: list[dict[str, Any]] = []
         self._last_scan_log_at: float = 0.0
         self._poll_pause_depth: int = 0
+        self._auto_stream_tasks: dict[str, asyncio.Task[None]] = {}
         # hidapi read() can block the asyncio loop (Windows often ignores timeout) → nginx 502.
         self._hid_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="jablotron-hid")
         self.panel_bus.set_command_sender(self)
@@ -216,6 +217,62 @@ class UsbDeviceManager:
             session.force_stream_refresh = True
             session.last_enable_states_at = 0.0
 
+    def _next_panel_index(self) -> int:
+        n = 1
+        for pid in self.panel_bus.panels:
+            if pid.startswith("PANEL_"):
+                try:
+                    n = max(n, int(pid.removeprefix("PANEL_")) + 1)
+                except ValueError:
+                    pass
+        return n
+
+    def _schedule_auto_stream(self, panel_id: str) -> None:
+        """Re-auth stored Admin/Service PIN after USB connect — no UI click."""
+        panel = self.panel_bus.panels.get(panel_id)
+        if not (getattr(panel, "stream_code", "") or "").strip():
+            return
+        old = self._auto_stream_tasks.get(panel_id)
+        if old and not old.done():
+            old.cancel()
+        self._auto_stream_tasks[panel_id] = asyncio.create_task(
+            self._auto_activate_stream(panel_id),
+            name=f"auto-stream:{panel_id}",
+        )
+
+    async def _auto_activate_stream(self, panel_id: str) -> None:
+        try:
+            for delay in (0.4, 2.0, 6.0):
+                if self._stop.is_set() or panel_id not in self._sessions:
+                    return
+                panel = self.panel_bus.panels.get(panel_id)
+                code = (getattr(panel, "stream_code", "") or "").strip() if panel else ""
+                if not code:
+                    return
+                if self.is_device_stream_ok(panel_id):
+                    return
+                await self.activate_device_stream(panel_id, code, persist=False)
+                await asyncio.sleep(delay)
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            return
+
+    async def reconnect_hid(self) -> dict[str, Any]:
+        """Close HID sessions and rescan — used from the System page."""
+        if self.settings.usb_mock_mode:
+            return {"ok": True, "mode": "mock", **self.get_status()}
+        for panel_id, session in list(self._sessions.items()):
+            try:
+                await self._hid_call(self._close_session, session)
+            except Exception:
+                pass
+            self._sessions.pop(panel_id, None)
+        await self._scan_usb_sessions(self._next_panel_index())
+        for panel_id in list(self._sessions.keys()):
+            self._schedule_auto_stream(panel_id)
+        return {"ok": True, **self.get_status()}
+
     def _connection_hint(self) -> str | None:
         if self.settings.usb_mock_mode:
             return None
@@ -255,6 +312,9 @@ class UsbDeviceManager:
 
     async def stop(self) -> None:
         self._stop.set()
+        for task in list(self._auto_stream_tasks.values()):
+            task.cancel()
+        self._auto_stream_tasks.clear()
         if self._task:
             await asyncio.wait([self._task], timeout=3)
         for session in list(self._sessions.values()):
@@ -747,6 +807,8 @@ class UsbDeviceManager:
         await self._initial_sync(panel_id)
         if needs_connected_event:
             await self._notify_panel_connected(panel_id, path_str)
+        if stream_code:
+            self._schedule_auto_stream(panel_id)
 
     async def sync_panel(self, panel_id: str) -> dict[str, Any]:
         """Đọc HID và đẩy trạng thái thiết bị đã khai báo lên UI."""
@@ -1154,11 +1216,12 @@ class UsbDeviceManager:
             to_create = max(0, resolved_users - existing_user_count)
             users_skipped = min(existing_user_count, resolved_users)
             for i in range(existing_user_count + 1, existing_user_count + to_create + 1):
+                perms = ["admin", "arm", "disarm"] if i == 1 else ["arm", "disarm"]
                 await self.panel_bus.create_user(
                     panel_id,
                     name=f"User {i}",
                     code_label="",
-                    permissions=["arm", "disarm"],
+                    permissions=perms,
                 )
                 users_created += 1
 

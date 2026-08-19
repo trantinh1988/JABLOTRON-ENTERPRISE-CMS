@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
-import { Camera, ImageOff, Loader2, Route, X } from 'lucide-react'
+import { Camera, ImageOff, Loader2, Palette, Route, X } from 'lucide-react'
 import { DeviceMapGlyph } from './DeviceTypeIcon'
+import { MapCanvasOverlay } from './MapCanvasOverlay'
 import type { Device, FloorMap, Panel } from '../api/client'
 import {
   clampMapIconSize,
@@ -12,29 +13,35 @@ import {
   MAP_MARKER_LABEL_MODES,
   mapStatusColor,
   mapStatusGlow,
+  mapStatusLegendLabel,
   mapStatusShouldPulse,
   MAP_STATUS_LEGEND,
   resizeMapBgRect,
   resolveDeviceIconKey,
   resolveMapBgRect,
+  type MapBgFitMode,
   type MapBgFitState,
   type MapBgHandle,
   type MapBgRect,
   type MapMarkerLabelMode,
 } from '../lib/deviceIconLibrary'
+import { clusterMarkers } from '../lib/mapMarkerCluster'
 import {
-  deviceIconLabel,
-  deviceStateLabel,
-  deviceTypeLabel,
+  defaultViewport,
+  panViewport,
+  viewBoxFromViewport,
+  zoomToBounds,
+  zoomViewportAt,
+  type MapViewport,
+} from '../lib/mapViewport'
+import {
   effectiveDeviceStatus,
-  labelOf,
   vi,
 } from '../i18n/vi'
 import { MapReactionChip } from './ReactionBadge'
-import { reactionChipLabel, reactionShowsMapChip } from '../lib/deviceReaction'
+import { reactionShowsMapChip } from '../lib/deviceReaction'
 import {
   buildTrailSegments,
-  formatTrailClock,
   resolveTrailStops,
   type AlarmTrailPoint,
 } from '../lib/alarmTrail'
@@ -54,6 +61,10 @@ type Props = {
   /** Chỉ pulse alarm/tamper — nhẹ hơn khi render nhiều map. */
   compactPulse?: boolean
   hideLegend?: boolean
+  /** Hiện chú giải dạng icon (sidebar đang đóng / fullscreen). */
+  legendAsIcon?: boolean
+  /** Thanh công cụ nổi góc trên-trái (tắt trong ô lưới). */
+  showCanvasTools?: boolean
   labelMode?: MapMarkerLabelMode
   bgFit?: MapBgFitState
   onLabelModeChange?: (mode: MapMarkerLabelMode) => void
@@ -125,6 +136,8 @@ export function InteractiveFloorMap({
   embedded = false,
   compactPulse = false,
   hideLegend = false,
+  legendAsIcon = false,
+  showCanvasTools = false,
   labelMode: labelModeProp,
   bgFit,
   onLabelModeChange,
@@ -150,6 +163,13 @@ export function InteractiveFloorMap({
   const [liveBgRect, setLiveBgRect] = useState<MapBgRect | null>(null)
   const [localSnapBusy, setLocalSnapBusy] = useState(false)
   const movedRef = useRef(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const panRef = useRef<{ pointerId: number; lastX: number; lastY: number } | null>(null)
+  const [surfaceSize, setSurfaceSize] = useState({ w: 0, h: 0 })
+  const [viewport, setViewport] = useState<MapViewport>(() => defaultViewport(map.width, map.height))
+  const [viewLocked, setViewLocked] = useState(true)
+  const [openClusterId, setOpenClusterId] = useState<string | null>(null)
+  const [legendOpen, setLegendOpen] = useState(false)
 
   const labelMode = labelModeProp ?? localLabelMode
   const showCaption = labelMode !== 'icon'
@@ -276,6 +296,19 @@ export function InteractiveFloorMap({
 
   useEffect(() => {
     const onMoveWin = (e: PointerEvent) => {
+      const pan = panRef.current
+      if (pan && e.pointerId === pan.pointerId) {
+        const from = clientToSvg(pan.lastX, pan.lastY)
+        const to = clientToSvg(e.clientX, e.clientY)
+        pan.lastX = e.clientX
+        pan.lastY = e.clientY
+        if (from && to) {
+          movedRef.current = true
+          setViewport((vp) => panViewport(vp, map.width, map.height, from.x - to.x, from.y - to.y))
+        }
+        return
+      }
+
       const bg = bgResizeRef.current
       if (bg && e.pointerId === bg.pointerId) {
         const start = clientToSvg(bg.startClient.x, bg.startClient.y)
@@ -297,6 +330,11 @@ export function InteractiveFloorMap({
     }
 
     const onUpWin = (e: PointerEvent) => {
+      if (panRef.current && e.pointerId === panRef.current.pointerId) {
+        panRef.current = null
+        return
+      }
+
       const bg = bgResizeRef.current
       if (bg && e.pointerId === bg.pointerId) {
         const start = clientToSvg(bg.startClient.x, bg.startClient.y)
@@ -331,7 +369,7 @@ export function InteractiveFloorMap({
       window.removeEventListener('pointerup', onUpWin)
       window.removeEventListener('pointercancel', onUpWin)
     }
-  }, [toMapCoords, clientToSvg, onMove, commitBgRect])
+  }, [toMapCoords, clientToSvg, onMove, commitBgRect, map.width, map.height])
 
   const alarmCount = hideChrome
     ? 0
@@ -363,7 +401,109 @@ export function InteractiveFloorMap({
   const svgPreserveAspect =
     fitState.mode === 'stretch' || fitState.mode === 'manual' ? 'none' : 'xMidYMid meet'
   const handleSize = Math.max(1.4, Math.min(map.width, map.height) * 0.028)
-  const hideFooterLegend = hideLegend || embedded
+  const hideFooterLegend = hideLegend || embedded || legendAsIcon
+  const canvasTools = showCanvasTools && !embedded
+
+  useEffect(() => {
+    setViewport(defaultViewport(map.width, map.height))
+    setOpenClusterId(null)
+  }, [map.id, map.width, map.height])
+
+  useEffect(() => {
+    const el = wrapRef.current
+    if (!el) return
+    const ro = new ResizeObserver(() => {
+      setSurfaceSize({ w: el.clientWidth, h: el.clientHeight })
+    })
+    ro.observe(el)
+    setSurfaceSize({ w: el.clientWidth, h: el.clientHeight })
+    return () => ro.disconnect()
+  }, [])
+
+  const mapToScreen = useCallback(
+    (x: number, y: number) => {
+      const svg = svgRef.current
+      if (!svg) return { x: 0, y: 0 }
+      const pt = svg.createSVGPoint()
+      pt.x = x
+      pt.y = y
+      const ctm = svg.getScreenCTM()
+      if (!ctm) return { x: 0, y: 0 }
+      const p = pt.matrixTransform(ctm)
+      return { x: p.x, y: p.y }
+    },
+    [viewport, surfaceSize.w, surfaceSize.h, map.width, map.height],
+  )
+
+  const markerPoints = useMemo(
+    () =>
+      devices.map((d) => {
+        const live = drag?.id === d.global_id
+        const override = posOverride[d.global_id]
+        const x = live && drag ? drag.x : (override?.x ?? d.map_x ?? map.width / 2)
+        const y = live && drag ? drag.y : (override?.y ?? d.map_y ?? map.height / 2)
+        return {
+          id: d.global_id,
+          x,
+          y,
+          status: effectiveDeviceStatus(d.state, d.disable),
+        }
+      }),
+    [devices, drag, posOverride, map.width, map.height],
+  )
+
+  const clusters = useMemo(() => {
+    if (editable || placing || !surfaceSize.w) {
+      return markerPoints.map((p) => ({
+        id: p.id,
+        x: p.x,
+        y: p.y,
+        memberIds: [p.id],
+        status: p.status,
+      }))
+    }
+    return clusterMarkers(markerPoints, mapToScreen)
+  }, [editable, placing, markerPoints, mapToScreen, surfaceSize.w])
+
+  const clusteredIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const c of clusters) {
+      if (c.memberIds.length > 1) for (const id of c.memberIds) ids.add(id)
+    }
+    return ids
+  }, [clusters])
+
+  function applyBgMode(mode: MapBgFitMode) {
+    const next: MapBgFitState = { ...fitState, mode }
+    if (mode !== 'manual') next.rect = null
+    if (mode === 'stretch') {
+      next.scale = 100
+      next.offsetX = 0
+      next.offsetY = 0
+    }
+    if (mode === 'manual' && !next.rect) {
+      next.rect = { x: 0, y: 0, width: map.width, height: map.height }
+    }
+    onBgFitChange?.(next)
+  }
+
+  const vb = viewBoxFromViewport(map.width, map.height, viewport)
+
+  useEffect(() => {
+    const svg = svgRef.current
+    if (!svg) return
+    const onWheel = (e: WheelEvent) => {
+      if (viewLocked) return
+      e.preventDefault()
+      const coords = clientToSvg(e.clientX, e.clientY)
+      if (!coords) return
+      const factor = Math.exp(-e.deltaY * 0.0012)
+      setViewport((vp) => zoomViewportAt(vp, map.width, map.height, coords.x, coords.y, factor))
+    }
+    svg.addEventListener('wheel', onWheel, { passive: false })
+    return () => svg.removeEventListener('wheel', onWheel)
+  }, [viewLocked, clientToSvg, map.width, map.height])
+
   const deviceById = useMemo(() => new Map(devices.map((d) => [d.global_id, d])), [devices])
   const trailStops = useMemo(() => {
     if (editable || !trailPoints?.length) return []
@@ -385,8 +525,12 @@ export function InteractiveFloorMap({
     [trailStops, lastTrailSeq, compactPulse],
   )
   const trailByDevice = useMemo(() => {
-    const m = new Map<string, (typeof trailStops)[number]>()
-    for (const stop of trailStops) m.set(stop.deviceId, stop)
+    const m = new Map<string, typeof trailStops>()
+    for (const stop of trailStops) {
+      const list = m.get(stop.deviceId)
+      if (list) list.push(stop)
+      else m.set(stop.deviceId, [stop])
+    }
     return m
   }, [trailStops])
   const trailCompact = compactPulse
@@ -465,9 +609,10 @@ export function InteractiveFloorMap({
       )}
 
       <div
+        ref={wrapRef}
         className={`relative min-h-0 flex-1 overflow-hidden ${
           hasBg ? 'bg-[#0b1017]' : 'map-grid bg-[linear-gradient(160deg,#121a24_0%,#0f161f_100%)]'
-        } ${placing ? 'cursor-crosshair' : ''}`}
+        } ${placing ? 'cursor-crosshair' : viewLocked ? '' : 'cursor-grab'}`}
       >
         {!hasBg && !embedded && (
           <div className="pointer-events-none absolute inset-0 z-[1] flex items-center justify-center">
@@ -480,11 +625,18 @@ export function InteractiveFloorMap({
 
         <svg
           ref={svgRef}
-          viewBox={`0 0 ${map.width} ${map.height}`}
+          viewBox={`${vb.x} ${vb.y} ${vb.w} ${vb.h}`}
           preserveAspectRatio={svgPreserveAspect}
           className="absolute inset-0 h-full w-full touch-none select-none"
           role="img"
           aria-label={vi.floorAria}
+          onPointerDown={(e) => {
+            if (e.button !== 0 || placing || viewLocked) return
+            if (e.target !== e.currentTarget && (e.target as Element).closest?.('[data-map-marker]')) return
+            panRef.current = { pointerId: e.pointerId, lastX: e.clientX, lastY: e.clientY }
+            movedRef.current = false
+            ;(e.currentTarget as Element).setPointerCapture?.(e.pointerId)
+          }}
           onClick={(e) => {
             if (!editable || !onPlace || !placing || dragRef.current) return
             const coords = toMapCoords(e.clientX, e.clientY)
@@ -564,6 +716,7 @@ export function InteractiveFloorMap({
           )}
 
           {devices.map((d) => {
+            if (clusteredIds.has(d.global_id)) return null
             const live = drag?.id === d.global_id
             const override = posOverride[d.global_id]
             const x = live ? drag.x : (override?.x ?? d.map_x ?? map.width / 2)
@@ -579,7 +732,6 @@ export function InteractiveFloorMap({
             const size = clampMapIconSize(d.map_icon_size)
             const selected = selectedId === d.global_id
             const flashing = liveFlashIds?.has(d.global_id) ?? false
-            const statusText = labelOf(deviceStateLabel, status)
             const caption = formatMapMarkerText(d, labelMode)
             const fullCaption = formatMapDeviceCaption(d)
             // Toàn bộ vòng tròn / chấm status tỉ lệ theo size icon
@@ -592,12 +744,13 @@ export function InteractiveFloorMap({
             const dotY = size * 0.75
             const pulseMax = isAlarm ? size * 3.6 : size * 2.35
             const pulseMin = isAlarm ? size * 1.35 : size * 1.1
-            const trailStop = trailCompact ? undefined : trailByDevice.get(d.global_id)
+            const trailVisits = trailCompact ? undefined : trailByDevice.get(d.global_id)
             const trailBadgeR = size * 0.5
 
             return (
               <g
                 key={d.global_id}
+                data-map-marker=""
                 transform={`translate(${x} ${y})`}
                 style={{
                   cursor: editable ? (live ? 'grabbing' : 'grab') : 'pointer',
@@ -701,28 +854,32 @@ export function InteractiveFloorMap({
                 <MapReactionChip reaction={d.reaction} size={size} />
                 <circle cx={dotX} cy={dotY} r={dotR + strokeW * 0.35} fill="#ffffff" />
                 <circle cx={dotX} cy={dotY} r={dotR} fill={color} />
-                {trailStop && (
-                  <g transform={`translate(0 ${-size * 1.48})`}>
-                    <circle
-                      r={trailBadgeR}
-                      fill="#ef5350"
-                      stroke="#0b1220"
-                      strokeWidth={Math.max(0.12, trailBadgeR * 0.18)}
-                    />
-                    <text
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fill="#ffffff"
-                      style={{
-                        fontSize: trailBadgeR * 1.2,
-                        fontFamily: 'IBM Plex Sans, system-ui, sans-serif',
-                        fontWeight: 800,
-                      }}
-                    >
-                      {trailStop.seq}
-                    </text>
-                  </g>
-                )}
+                {trailVisits?.map((trailStop, i) => {
+                  const n = trailVisits.length
+                  const offsetX = n <= 1 ? 0 : (i - (n - 1) / 2) * size * 1.12
+                  return (
+                    <g key={trailStop.seq} transform={`translate(${offsetX} ${-size * 1.48})`}>
+                      <circle
+                        r={trailBadgeR}
+                        fill="#ef5350"
+                        stroke="#0b1220"
+                        strokeWidth={Math.max(0.12, trailBadgeR * 0.18)}
+                      />
+                      <text
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fill="#ffffff"
+                        style={{
+                          fontSize: trailBadgeR * 1.2,
+                          fontFamily: 'IBM Plex Sans, system-ui, sans-serif',
+                          fontWeight: 800,
+                        }}
+                      >
+                        {trailStop.seq}
+                      </text>
+                    </g>
+                  )
+                })}
                 {showCaption && caption && (
                   <text
                     y={size + Math.max(1.6, size * 0.95)}
@@ -740,20 +897,56 @@ export function InteractiveFloorMap({
                     {caption}
                   </text>
                 )}
-                <title>
-                  {fullCaption} · {d.global_id} ·{' '}
-                  {labelOf(deviceIconLabel, icon) || labelOf(deviceTypeLabel, d.device_type)}
-                  {d.model ? ` · ${d.model}` : ''}
-                  {d.link === 'rf' ? ' · RF' : d.link === 'bus' ? ' · Bus' : ''} ·{' '}
-                  {statusText}
-                  {trailStop ? ` · ${vi.alarmTrailStopTitle(trailStop.seq, fullCaption, formatTrailClock(trailStop.at))}` : ''}
-                  {reactionShowsMapChip(d.reaction)
-                    ? ` · ${reactionChipLabel(d.reaction)}`
-                    : ''}
-                </title>
+                <title>{`${fullCaption} | ${mapStatusLegendLabel(status)}`}</title>
               </g>
             )
           })}
+
+          {clusters
+            .filter((c) => c.memberIds.length > 1)
+            .map((c) => {
+              const color = mapStatusColor(c.status)
+              const count = c.memberIds.length
+              const r = 2.4
+              return (
+                <g
+                  key={c.id}
+                  data-map-marker=""
+                  transform={`translate(${c.x} ${c.y})`}
+                  style={{ cursor: 'pointer' }}
+                  onPointerDown={(e) => {
+                    e.stopPropagation()
+                    const members = c.memberIds
+                      .map((id) => deviceById.get(id))
+                      .filter((d): d is Device => Boolean(d))
+                    const alarm = members.find((d) => effectiveDeviceStatus(d.state, d.disable) === 'alarm')
+                    if (viewLocked) {
+                      setOpenClusterId((cur) => (cur === c.id ? null : c.id))
+                      onSelect?.(alarm?.global_id ?? members[0]?.global_id ?? null)
+                      return
+                    }
+                    setViewport(zoomToBounds(map.width, map.height, members.map((d) => d.map_x ?? c.x), members.map((d) => d.map_y ?? c.y)))
+                    setOpenClusterId(null)
+                  }}
+                >
+                  <title>{vi.mapClusterTitle(count)}</title>
+                  <circle r={r * 1.35} fill="#ffffff" opacity={0.9} />
+                  <circle r={r} fill={color} stroke="#0b1220" strokeWidth={0.28} />
+                  <text
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill="#ffffff"
+                    style={{
+                      fontSize: 1.7,
+                      fontFamily: 'IBM Plex Sans, system-ui, sans-serif',
+                      fontWeight: 800,
+                    }}
+                  >
+                    {vi.mapClusterLabel(count)}
+                  </text>
+                </g>
+              )
+            })}
 
           {showTrail && (
             <g className="alarm-trail" pointerEvents="none" aria-label={vi.alarmTrailAria}>
@@ -785,8 +978,27 @@ export function InteractiveFloorMap({
           )}
         </svg>
 
-        {showTrailChrome && (
-          <div className="pointer-events-none absolute top-2 left-2 z-[3] flex items-center gap-1">
+        <div className="pointer-events-none absolute top-2 left-2 z-[4] flex flex-col items-start gap-1">
+          {canvasTools && (
+            <MapCanvasOverlay
+              bgMode={fitState.mode}
+              onBgModeChange={editable ? applyBgMode : undefined}
+              showBgFit={Boolean(editable && hasBg)}
+              allowManualFit={Boolean(editable && onBgFitChange)}
+              zoom={viewport.zoom}
+              onZoomIn={() =>
+                setViewport((vp) => zoomViewportAt(vp, map.width, map.height, vp.cx, vp.cy, 1.2))
+              }
+              onZoomOut={() =>
+                setViewport((vp) => zoomViewportAt(vp, map.width, map.height, vp.cx, vp.cy, 1 / 1.2))
+              }
+              onZoomReset={() => setViewport(defaultViewport(map.width, map.height))}
+              locked={viewLocked}
+              onLockedChange={setViewLocked}
+            />
+          )}
+          {showTrailChrome && (
+          <div className="pointer-events-auto flex items-center gap-1">
             <div className="pointer-events-auto flex items-center gap-1 rounded-md bg-danger/15 px-1.5 py-0.5 text-[10px] font-semibold text-danger ring-1 ring-danger/35 backdrop-blur-sm">
               {!embedded && (
                 <>
@@ -829,6 +1041,70 @@ export function InteractiveFloorMap({
                 </button>
               )}
             </div>
+          </div>
+        )}
+        </div>
+
+        {openClusterId &&
+          (() => {
+            const c = clusters.find((x) => x.id === openClusterId)
+            if (!c) return null
+            const members = c.memberIds
+              .map((id) => deviceById.get(id))
+              .filter((d): d is Device => Boolean(d))
+            const screen = mapToScreen(c.x, c.y)
+            const box = wrapRef.current?.getBoundingClientRect()
+            const left = box ? Math.min(Math.max(8, screen.x - box.left), box.width - 168) : 8
+            const top = box ? Math.min(Math.max(8, screen.y - box.top + 14), box.height - 80) : 8
+            return (
+              <div
+                className="absolute z-[6] max-h-48 min-w-[10.5rem] overflow-auto rounded-md bg-panel/95 py-1 text-[11px] shadow-lg ring-1 ring-line"
+                style={{ left, top }}
+              >
+                {members.map((d) => {
+                  const st = effectiveDeviceStatus(d.state, d.disable)
+                  return (
+                    <button
+                      key={d.global_id}
+                      type="button"
+                      className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left hover:bg-fog"
+                      onClick={() => {
+                        onSelect?.(d.global_id)
+                        setOpenClusterId(null)
+                      }}
+                    >
+                      <span
+                        className="size-2 shrink-0 rounded-full ring-1 ring-white/70"
+                        style={{ background: mapStatusColor(st) }}
+                      />
+                      <span className="truncate font-medium">{formatMapDeviceCaption(d)}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })()}
+
+        {legendAsIcon && (
+          <div className="absolute bottom-2 left-2 z-[3]">
+            <button
+              type="button"
+              className="inline-flex size-8 items-center justify-center rounded-lg bg-panel/90 text-steel shadow-lg ring-1 ring-line/80 backdrop-blur-md hover:text-ink"
+              title={vi.mapLegendToggle}
+              aria-expanded={legendOpen}
+              onClick={() => setLegendOpen((v) => !v)}
+            >
+              <Palette className="size-3.5" />
+            </button>
+            {legendOpen && (
+              <div className="absolute bottom-[calc(100%+6px)] left-0 min-w-[12rem] rounded-md bg-panel/95 px-2.5 py-1.5 font-mono text-[10px] text-steel/80 shadow-lg ring-1 ring-line">
+                <div className="flex flex-wrap gap-2">
+                  {MAP_STATUS_LEGEND.map((item) => (
+                    <LegendDot key={item.key} color={item.color} label={item.label} />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

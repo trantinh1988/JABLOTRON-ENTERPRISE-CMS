@@ -1,0 +1,24 @@
+﻿2026-08-19 12:07:27 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-19 12:07:29 starting native backend :8010
+2026-08-19 12:07:29 uvicorn pid=20008
+2026-08-19 12:07:30 backend health ok
+2026-08-19 12:07:31 docker ready â€
+2026-08-19 12:07:31 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+08/19/2026 12:11:28.41 startup-cmd begin
+2026-08-19 12:11:30 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-19 12:11:30 autostart delay 20s (user profile / Docker Desktop)
+2026-08-19 12:11:30 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-19 12:11:32 starting native backend :8010
+2026-08-19 12:11:32 uvicorn pid=18772
+2026-08-19 12:11:34 backend health ok
+2026-08-19 12:11:35 docker ready â€
+2026-08-19 12:11:35 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+2026-08-19 12:11:50 backend already running :8010
+2026-08-19 12:11:50 docker ready â€
+2026-08-19 12:11:50 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+2026-08-19 12:12:13 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-19 12:12:13 autostart delay 20s (user profile / Docker Desktop)
+2026-08-19 12:12:33 backend already running :8010
+2026-08-19 12:12:33 docker ready â€
+2026-08-19 12:12:33 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+08/19/2026 12:12:33.55 startup-cmd end

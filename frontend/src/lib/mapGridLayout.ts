@@ -54,6 +54,35 @@ function validMapIds(maps: { id: number }[]): number[] {
 }
 
 /** Gán mặc định: preferId vào ô 1, phần còn lại theo thứ tự khai báo. */
+export function filledSlotIds(slots: (number | null)[]): number[] {
+  const seen = new Set<number>()
+  const out: number[] = []
+  for (const id of slots) {
+    if (id == null || seen.has(id)) continue
+    seen.add(id)
+    out.push(id)
+  }
+  return out
+}
+
+/** Số cột/hàng theo số ô đang có bản đồ — không chừa ô xám trống. */
+export function autoGridSize(count: number): { cols: number; rows: number } {
+  const n = Math.max(1, count)
+  if (n === 1) return { cols: 1, rows: 1 }
+  if (n === 2) return { cols: 2, rows: 1 }
+  if (n <= 4) return { cols: 2, rows: 2 }
+  if (n <= 6) return { cols: 3, rows: 2 }
+  return { cols: 3, rows: 3 }
+}
+
+export function minLayoutForCount(count: number): MapGridLayout {
+  if (count <= 1) return 1
+  if (count <= 2) return 2
+  if (count <= 4) return 4
+  if (count <= 6) return 6
+  return 9
+}
+
 export function defaultSlots(
   layout: MapGridLayout,
   maps: { id: number }[],
@@ -82,15 +111,11 @@ export function resizeSlots(
   const used = new Set<number>()
   const next: (number | null)[] = []
 
-  for (let i = 0; i < Math.min(layout, current.length); i++) {
+  for (let i = 0; i < current.length && next.length < layout; i++) {
     const id = current[i]
     if (id != null && valid.has(id) && !used.has(id)) {
       next.push(id)
       used.add(id)
-    } else if (id == null) {
-      next.push(null)
-    } else {
-      next.push(null)
     }
   }
 
@@ -104,6 +129,23 @@ export function resizeSlots(
     }
   }
   return next
+}
+
+export function addMapToSlots(
+  slots: (number | null)[],
+  mapId: number,
+  max: MapGridLayout,
+): (number | null)[] {
+  const filled = filledSlotIds(slots)
+  if (filled.includes(mapId) || filled.length >= max) return filled
+  return [...filled, mapId]
+}
+
+export function removeSlotAt(slots: (number | null)[], index: number): (number | null)[] {
+  const next = slots.slice()
+  if (index < 0 || index >= next.length) return filledSlotIds(next)
+  next.splice(index, 1)
+  return filledSlotIds(next)
 }
 
 /** Gán map vào ô. Nếu map đang ở ô khác → đổi chỗ (kiểu NVR). `null` = để trống. */
@@ -127,7 +169,7 @@ export function assignSlot(
 
 /** Đảm bảo map nằm trong lưới — nếu chưa có thì đưa vào ô đầu (đổi chỗ). */
 export function ensureMapInSlots(slots: (number | null)[], mapId: number): (number | null)[] {
-  if (!slots.length) return slots
   if (slots.includes(mapId)) return slots
+  if (!slots.length) return [mapId]
   return assignSlot(slots, 0, mapId)
 }

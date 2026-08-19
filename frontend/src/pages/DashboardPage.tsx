@@ -18,6 +18,7 @@ import { StreamCodeModal } from '../components/StreamCodeModal'
 import { Card, PageHeader } from '../components/ui'
 import { ReactionBadge } from '../components/ReactionBadge'
 import { type LastAction, usePanelKeypad } from '../hooks/usePanelKeypad'
+import { useOperatorSession } from '../hooks/useOperatorSession'
 import { latestEventSeq, takeEventsSince } from '../hooks/useEventStream'
 import { armedStateLabel, deviceStateLabel, labelOf, vi } from '../i18n/vi'
 import { reactionShowsMapChip } from '../lib/deviceReaction'
@@ -43,6 +44,7 @@ export function DashboardPage({
   loadError,
   onRefresh,
 }: Props) {
+  const { canSettings } = useOperatorSession()
   const [activePanelId, setActivePanelId] = useState<string | null>(null)
   const [zones, setZones] = useState<Zone[]>([])
   const [users, setUsers] = useState<PanelUser[]>([])
@@ -180,6 +182,9 @@ export function DashboardPage({
       }
 
       if (ev.type === 'panel_armed' && ev.armed_state) {
+        reloadMeta = true
+        // Derived from section changes — keep the zone_armed row, not "Toàn tủ".
+        if (ev.derived === true) continue
         const armed = String(ev.armed_state)
         const detail = ev.detail != null ? String(ev.detail) : ''
         const fromCms = Boolean(detail) && !detail.startsWith('mock') && !detail.startsWith('usb')
@@ -190,7 +195,6 @@ export function DashboardPage({
           action: armed === 'armed' ? 'arm' : armed === 'partial' ? 'partial' : 'disarm',
           userName: fromCms ? detail.split(' · ')[0] || detail : vi.keypadOperatorPhysical,
         }
-        reloadMeta = true
       }
     }
 
@@ -216,11 +220,13 @@ export function DashboardPage({
 
   const armActivity = useMemo(() => {
     return events
-      .filter(
-        (e) =>
-          (e.type === 'panel_armed' || e.type === 'zone_armed') &&
-          (!activePanel || e.panel_id === activePanel.panel_id),
-      )
+      .filter((e) => {
+        if (activePanel && e.panel_id !== activePanel.panel_id) return false
+        if (e.type === 'zone_armed') return true
+        // Derived rollup of a section arm/disarm — the zone row is enough.
+        if (e.type === 'panel_armed') return e.derived !== true
+        return false
+      })
       .slice(0, 10)
   }, [events, activePanel])
 
@@ -243,8 +249,8 @@ export function DashboardPage({
   )
 
   const alarmTotal = panelDevices.filter((d) => (d.state || '').toLowerCase() === 'alarm').length
-  const needsStreamSetup =
-    activePanel?.connection === 'usb' && activePanel.device_stream_ok !== true
+  const needsStreamPin =
+    activePanel?.connection === 'usb' && !activePanel.has_stream_code
 
   async function saveStreamCode(code: string) {
     if (!activePanel) return
@@ -281,7 +287,6 @@ export function DashboardPage({
       <div className="shrink-0">
         <PageHeader
           title={vi.navDashboard}
-          hint={vi.keypadPageHint}
           actions={
             <span className="hidden font-mono text-[11px] text-steel/50 sm:inline">
               {keypad.sortedZones.length} {vi.section.toLowerCase()} · {alarmTotal}{' '}
@@ -307,7 +312,7 @@ export function DashboardPage({
             </button>
           ))}
           {!panels.length && <span className="text-xs text-steel/50">{vi.noPanels}</span>}
-          {needsStreamSetup && writeAllowed && (
+          {needsStreamPin && writeAllowed && canSettings && (
             <button
               type="button"
               onClick={() => {

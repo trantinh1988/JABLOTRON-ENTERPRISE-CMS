@@ -61,7 +61,6 @@ import {
   DEFAULT_MAP_ICON_SIZE,
   formatMapDeviceCaption,
   isMapMarkerLabelMode,
-  MAP_BG_FIT_MODES,
   MAP_MARKER_LABEL_MODE_KEY,
   MAP_MARKER_LABEL_MODES,
   MAP_STATUS_LEGEND,
@@ -70,7 +69,6 @@ import {
   readMapBgFit,
   resolveDeviceIconKey,
   writeMapBgFit,
-  type MapBgFitMode,
   type MapBgFitState,
   type MapMarkerLabelMode,
 } from '../lib/deviceIconLibrary'
@@ -111,13 +109,6 @@ const MODE_LABEL: Record<MapMarkerLabelMode, string> = {
   label: vi.mapLabelModeLabel,
   id_label: vi.mapLabelModeIdLabel,
   icon: vi.mapLabelModeIcon,
-}
-
-const BG_FIT_LABEL: Record<MapBgFitMode, string> = {
-  fit: vi.mapBgFitFit,
-  fill: vi.mapBgFitFill,
-  stretch: vi.mapBgFitStretch,
-  manual: vi.mapBgFitManual,
 }
 
 function readLabelMode(): MapMarkerLabelMode {
@@ -898,6 +889,9 @@ export function MapsPage({
       placing={canEdit && Boolean(placingId)}
       selectedId={selectedId}
       hideChrome
+      showCanvasTools
+      hideLegend
+      legendAsIcon={!sidebarOpen || fullscreen}
       labelMode={labelMode}
       bgFit={bgFit}
       onLabelModeChange={setLabelMode}
@@ -947,7 +941,6 @@ export function MapsPage({
 
   const toolBtn =
     'inline-flex size-7 shrink-0 items-center justify-center rounded-md text-steel ring-1 ring-line/80 transition hover:bg-fog hover:text-ink disabled:opacity-40'
-  const segWrap = 'inline-flex items-center rounded-md bg-mist/70 p-0.5 ring-1 ring-line/60'
   const segBtn = (active: boolean) =>
     `rounded px-1.5 py-0.5 text-[10px] font-semibold leading-none transition ${
       active ? 'bg-accent text-panel' : 'text-steel hover:bg-fog/80 hover:text-ink'
@@ -1044,24 +1037,10 @@ export function MapsPage({
           )}
         </div>
 
-      {/* Ảnh nền — chỉ khi chỉnh sửa */}
+      {/* Ảnh nền — upload / xóa / đồng bộ tỉ lệ (Vừa/Phủ/Giãn nằm trên canvas) */}
       {canEdit && active?.background_url && (
-        <div className={toolGroup} role="group" aria-label={vi.mapBgFitHint} title={vi.mapBgFitHint}>
+        <div className={toolGroup} role="group" aria-label={vi.mapToolGroupBg}>
           <span className={toolGroupLabel}>{vi.mapToolGroupBg}</span>
-          <div className={segWrap}>
-            {MAP_BG_FIT_MODES.map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() =>
-                  mode === 'manual' ? patchBgFit({ mode: 'manual' }) : patchBgFit({ mode, rect: null })
-                }
-                className={segBtn(bgFit.mode === mode)}
-              >
-                {BG_FIT_LABEL[mode]}
-              </button>
-            ))}
-          </div>
           <input
             ref={bgInputRef}
             type="file"
@@ -1403,6 +1382,23 @@ export function MapsPage({
           </ul>
         </Card>
       )}
+
+      <div className="mt-auto shrink-0 rounded-lg bg-panel/60 px-2.5 py-1.5 ring-1 ring-line/60">
+        <p className="mb-1 text-[9px] font-semibold tracking-wide text-steel/55 uppercase">
+          {vi.statusLegend}
+        </p>
+        <div className="flex flex-wrap gap-x-2 gap-y-1">
+          {STATUS_ITEMS.map((item) => (
+            <span key={item.key} className="inline-flex items-center gap-1 font-mono text-[10px] text-steel/80">
+              <span
+                className="inline-block size-2 rounded-full ring-1 ring-white/70"
+                style={{ background: item.color, boxShadow: `0 0 5px ${item.color}` }}
+              />
+              {item.label}
+            </span>
+          ))}
+        </div>
+      </div>
     </aside>
   )
 

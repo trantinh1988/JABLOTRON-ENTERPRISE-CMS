@@ -16,9 +16,24 @@ $PidFile = Join-Path $LogDir "backend.pid"
 $DataDir = Join-Path $Backend "data"
 $Keys = Join-Path $Root "keys\public_key.pem"
 $Port = if ($env:CMS_BACKEND_PORT) { $env:CMS_BACKEND_PORT } else { "8010" }
+$UiPort = if ($env:CMS_UI_PORT) { $env:CMS_UI_PORT } else { "8080" }
 
 Set-Location $Root
 New-Item -ItemType Directory -Force -Path $LogDir, $DataDir | Out-Null
+$portsFile = Join-Path $DataDir "host_ports.json"
+if (Test-Path $portsFile) {
+    try {
+        $pj = Get-Content $portsFile -Raw | ConvertFrom-Json
+        if ($pj.ui_port) { $UiPort = [string]$pj.ui_port }
+        if ($pj.api_port) { $Port = [string]$pj.api_port }
+    } catch {}
+}
+$env:CMS_UI_PORT = $UiPort
+$env:CMS_BACKEND_PORT = $Port
+$nginxRuntime = Join-Path $DataDir "nginx-ui.conf"
+if (-not (Test-Path $nginxRuntime)) {
+    Copy-Item (Join-Path $Root "frontend\nginx.host-backend.conf") $nginxRuntime -ErrorAction SilentlyContinue
+}
 
 if (-not (Test-Path $Keys)) {
     Write-Host "Thieu keys/public_key.pem" -ForegroundColor Red
@@ -93,7 +108,7 @@ $env:CMS_JABLOTRON_PRODUCT_ID = "0x0008"
 $env:CMS_PUBLIC_KEY_PATH = $Keys
 $env:CMS_DATABASE_URL = "sqlite+aiosqlite:///$dbFile"
 $env:CMS_HWID_CACHE_PATH = (Join-Path $DataDir "hwid.cache")
-$env:CMS_CORS_ORIGINS = "http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173"
+$env:CMS_CORS_ORIGINS = "http://localhost:$UiPort,http://127.0.0.1:$UiPort,http://localhost:5173,http://127.0.0.1:5173"
 
 Write-Host ""
 Write-Host ("=== 5. Khoi dong backend USB nen, port {0} ===" -f $Port)
@@ -132,7 +147,7 @@ if ($hint -match 'Docker') {
 Write-Host ""
 Write-Host ("=== 6. Khoi dong UI Docker proxy host.docker.internal:{0} ===" -f $Port)
 Set-Location $Root
-docker compose -f docker-compose.usb-host.yml up -d --build
+docker compose -f docker-compose.usb-host.yml up -d --build --remove-orphans
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Docker compose that bai - dam bao Docker Desktop dang chay." -ForegroundColor Red
     exit 1
@@ -144,7 +159,9 @@ Write-Host "=== 7. Kiem tra USB ==="
 
 Write-Host ""
 Write-Host "Xong."
-Write-Host "  UI:      http://127.0.0.1:8080"
+Write-Host ("  UI:      http://127.0.0.1:{0}" -f $UiPort)
 Write-Host ("  API:     http://127.0.0.1:{0}/api/usb/status" -f $Port)
 Write-Host ("  Log:     Get-Content {0} -Wait -Tail 50" -f $logFile)
 Write-Host "  Dung:    .\scripts\stop-cms.ps1"
+Write-Host "  Autostart: bat «Khoi dong cung may» tren trang He thong"
+Write-Host "             hoac .\scripts\install-autostart-windows.ps1"

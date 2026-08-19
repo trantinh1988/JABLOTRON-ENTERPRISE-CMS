@@ -25,6 +25,17 @@ if [[ ! -f "$KEYS" ]]; then
 fi
 
 CMS_BACKEND_PORT="${CMS_BACKEND_PORT:-8010}"
+CMS_UI_PORT="${CMS_UI_PORT:-8080}"
+if [[ -f "$DATA_DIR/host_ports.json" ]]; then
+  _ui="$(P="$DATA_DIR/host_ports.json" python3 -c "import json,os; p=json.load(open(os.environ['P'])); print(p.get('ui_port') or '')" 2>/dev/null || true)"
+  _api="$(P="$DATA_DIR/host_ports.json" python3 -c "import json,os; p=json.load(open(os.environ['P'])); print(p.get('api_port') or '')" 2>/dev/null || true)"
+  [[ -n "${_ui:-}" ]] && CMS_UI_PORT="$_ui"
+  [[ -n "${_api:-}" ]] && CMS_BACKEND_PORT="$_api"
+fi
+export CMS_UI_PORT CMS_BACKEND_PORT
+if [[ ! -f "$DATA_DIR/nginx-ui.conf" ]]; then
+  cp "$ROOT/frontend/nginx.host-backend.hostnet.conf" "$DATA_DIR/nginx-ui.conf"
+fi
 
 echo "=== 1. Dừng Docker backend (container không dùng được USB HID) ==="
 bash "$ROOT/scripts/stop-cms.sh"
@@ -78,7 +89,7 @@ export CMS_JABLOTRON_PRODUCT_ID=0x0008
 export CMS_PUBLIC_KEY_PATH="$KEYS"
 export CMS_DATABASE_URL="sqlite+aiosqlite:///$DATA_DIR/cms.db"
 export CMS_HWID_CACHE_PATH="$DATA_DIR/hwid.cache"
-export CMS_CORS_ORIGINS="http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173"
+export CMS_CORS_ORIGINS="http://localhost:${CMS_UI_PORT},http://127.0.0.1:${CMS_UI_PORT},http://localhost:5173,http://127.0.0.1:5173"
 
 echo ""
 echo "=== 5. Khởi động backend USB (nền, port ${CMS_BACKEND_PORT}) ==="
@@ -109,7 +120,7 @@ fi
 echo ""
 echo "=== 6. Khởi động UI Docker (proxy → 127.0.0.1:${CMS_BACKEND_PORT}) ==="
 cd "$ROOT"
-docker compose -f docker-compose.usb-host.linux.yml up -d --build
+docker compose -f docker-compose.usb-host.linux.yml up -d --build --remove-orphans
 
 echo ""
 echo "=== 7. Kiểm tra USB ==="
@@ -117,7 +128,9 @@ bash "$ROOT/scripts/check-usb-linux.sh"
 
 echo ""
 echo "Xong."
-echo "  UI:      http://127.0.0.1:8080"
+echo "  UI:      http://127.0.0.1:${CMS_UI_PORT}"
 echo "  API:     http://127.0.0.1:${CMS_BACKEND_PORT}/api/usb/status"
 echo "  Log:     tail -f $LOG_DIR/backend.log"
 echo "  Dừng:    kill \$(cat $PID_FILE); docker compose -f docker-compose.usb-host.linux.yml down"
+echo "  Autostart: bật «Khởi động cùng máy» trên trang Hệ thống"
+echo "             hoặc ./scripts/install-autostart-linux.sh"

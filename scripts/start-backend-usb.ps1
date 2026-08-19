@@ -10,6 +10,17 @@ $Backend = Join-Path $Root "backend"
 $DataDir = Join-Path $Backend "data"
 $Keys = Join-Path $Root "keys\public_key.pem"
 $Port = if ($env:CMS_BACKEND_PORT) { $env:CMS_BACKEND_PORT } else { "8010" }
+$UiPort = if ($env:CMS_UI_PORT) { $env:CMS_UI_PORT } else { "8080" }
+$portsFile = Join-Path $DataDir "host_ports.json"
+if (Test-Path $portsFile) {
+    try {
+        $pj = Get-Content $portsFile -Raw | ConvertFrom-Json
+        if ($pj.ui_port) { $UiPort = [string]$pj.ui_port }
+        if ($pj.api_port) { $Port = [string]$pj.api_port }
+    } catch {}
+}
+$env:CMS_UI_PORT = $UiPort
+$env:CMS_BACKEND_PORT = $Port
 
 Set-Location $Backend
 
@@ -36,12 +47,12 @@ $env:CMS_JABLOTRON_PRODUCT_ID = "0x0008"
 $env:CMS_PUBLIC_KEY_PATH = $Keys
 $env:CMS_DATABASE_URL = "sqlite+aiosqlite:///$dbFile"
 $env:CMS_HWID_CACHE_PATH = (Join-Path $DataDir "hwid.cache")
-$env:CMS_CORS_ORIGINS = "http://localhost:8080,http://127.0.0.1:8080,http://localhost:5173"
+$env:CMS_CORS_ORIGINS = "http://localhost:$UiPort,http://127.0.0.1:$UiPort,http://localhost:5173,http://127.0.0.1:5173"
 
 Write-Host ""
 Write-Host "Backend USB HID — http://0.0.0.0:$Port" -ForegroundColor Green
 Write-Host 'Terminal khac: docker compose -f docker-compose.usb-host.yml up -d --build' -ForegroundColor Cyan
-Write-Host 'UI: http://127.0.0.1:8080 - cam USB Link Jablotron vao PC' -ForegroundColor Cyan
+Write-Host ("UI: http://127.0.0.1:{0} - cam USB Link Jablotron vao PC" -f $UiPort) -ForegroundColor Cyan
 Write-Host ""
 
 # Tranh --reload: tren Windows de de lai worker zombie, nhieu process tranh USB/port 8010.

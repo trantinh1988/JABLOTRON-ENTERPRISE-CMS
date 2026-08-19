@@ -960,3 +960,185 @@ export async function listAutomationSnaps(limit = 20): Promise<AutomationSnap[]>
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
+
+export type AlertSoundSlot = {
+  name: string
+  url: string
+  type: string
+}
+
+export type SystemSettings = {
+  sound_enabled: boolean
+  trail_enabled: boolean
+  site_title?: string
+  sounds: Partial<Record<'alarm' | 'tamper' | 'fault' | 'loss', AlertSoundSlot | null>>
+}
+
+export async function getSystemSettings(): Promise<SystemSettings> {
+  const res = await apiFetch('/api/system/settings')
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function patchSystemSettings(body: {
+  sound_enabled?: boolean
+  trail_enabled?: boolean
+  site_title?: string
+}): Promise<SystemSettings> {
+  const res = await apiFetch('/api/system/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function uploadAlertSound(
+  status: 'alarm' | 'tamper' | 'fault' | 'loss',
+  file: File,
+): Promise<SystemSettings> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await apiFetch(`/api/system/sounds/${status}`, { method: 'POST', body: form })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function deleteAlertSound(
+  status: 'alarm' | 'tamper' | 'fault' | 'loss',
+): Promise<SystemSettings> {
+  const res = await apiFetch(`/api/system/sounds/${status}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export type HostService = {
+  ok: boolean
+  os: 'windows' | 'linux' | 'other' | string
+  autostart_supported: boolean
+  autostart_enabled: boolean
+  autostart_label: string
+  start_script: string
+  docker_ok: boolean | null
+  usb_mock_mode: boolean
+  usb_hid_available: boolean
+  usb_devices_found: number
+  usb_panels_connected: number
+  usb_last_error: string | null
+  detail: string | null
+}
+
+export async function getHostService(): Promise<HostService> {
+  const res = await apiFetch('/api/system/host')
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function setHostAutostart(enabled: boolean): Promise<HostService> {
+  const res = await apiFetch('/api/system/host/autostart', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function reconnectHostUsb(): Promise<HostService> {
+  const res = await apiFetch('/api/system/host/usb-reconnect', { method: 'POST' })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export type HostPorts = {
+  ui_port: number
+  api_port: number
+  ui_port_default: number
+  api_port_default: number
+  ui_url: string
+  api_url: string
+  os: string
+  applied: boolean | null
+  detail: string | null
+  start_script: string
+}
+
+export async function getHostPorts(): Promise<HostPorts> {
+  const res = await apiFetch('/api/system/ports')
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function setHostPorts(uiPort: number, apiPort: number): Promise<HostPorts> {
+  const res = await apiFetch('/api/system/ports', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ui_port: uiPort, api_port: apiPort }),
+  })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export type BackupInfo = {
+  format: string
+  version: number
+  panels: number
+  devices: number
+  maps: number
+  map_backgrounds: number
+  cameras: number
+  automation_rules: number
+  events: number
+  extra_files: number
+  approx_bytes: number
+}
+
+export type BackupRestoreResult = BackupInfo & {
+  ok: boolean
+  created_at?: string | null
+  detail?: string | null
+}
+
+export async function getBackupInfo(): Promise<BackupInfo> {
+  const res = await apiFetch('/api/system/backup/info')
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+function filenameFromDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback
+  const star = header.match(/filename\*=UTF-8''([^;]+)/i)
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1].trim())
+    } catch {
+      /* keep fallback */
+    }
+  }
+  const plain = header.match(/filename="?([^";]+)"?/i)
+  return plain?.[1]?.trim() || fallback
+}
+
+export async function downloadSystemBackup(): Promise<void> {
+  const res = await apiFetch('/api/system/backup')
+  if (!res.ok) throw new Error(await parseError(res))
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filenameFromDisposition(
+    res.headers.get('content-disposition'),
+    `jablotron-cms-backup_${new Date().toISOString().slice(0, 10)}.zip`,
+  )
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+export async function restoreSystemBackup(file: File): Promise<BackupRestoreResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await apiFetch('/api/system/backup/restore', { method: 'POST', body: form })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}

@@ -45,7 +45,7 @@ def startup_connection(usb_mock_mode: bool) -> tuple[str, str | None]:
     return "disconnected", None
 
 
-async def load_panels_into_bus(bus: Any) -> None:
+async def load_panels_into_bus(bus: Any, *, write_back: bool = True) -> None:
     """Restore declared panels and config from DB into in-memory PanelBus."""
     from app.core.config import get_settings
     from app.iot_core.panel_bus import PanelState
@@ -157,8 +157,38 @@ async def load_panels_into_bus(bus: Any) -> None:
                 }
     finally:
         bus._persist = True  # type: ignore[attr-defined]
-        for panel in bus.panels.values():
-            await save_panel(panel)
+        if write_back:
+            for panel in bus.panels.values():
+                await save_panel(panel)
+
+
+async def reload_panels_from_db(bus: Any) -> None:
+    """Replace in-memory panel config from SQLite after a backup restore."""
+    live = {
+        pid: (p.connection, p.usb_path)
+        for pid, p in list(bus.panels.items())
+        if (p.connection or "") in ("usb", "mock")
+    }
+    lock = getattr(bus, "_lock", None)
+    if lock is not None:
+        async with lock:
+            bus.panels.clear()
+    else:
+        bus.panels.clear()
+    await load_panels_into_bus(bus, write_back=False)
+    for pid, panel in bus.panels.items():
+        prev = live.get(pid)
+        if prev:
+            panel.connection, panel.usb_path = prev
+    workers = getattr(bus, "_workers", {})
+    queues = getattr(bus, "_queues", {})
+    for pid in list(workers):
+        if pid in bus.panels:
+            continue
+        worker = workers.pop(pid, None)
+        queues.pop(pid, None)
+        if worker is not None and not worker.done():
+            worker.cancel()
 
 
 async def save_panel(panel: Any) -> None:

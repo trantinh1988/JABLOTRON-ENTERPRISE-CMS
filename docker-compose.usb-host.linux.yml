@@ -9,4 +9,4 @@ services:
     restart: unless-stopped
     network_mode: host
     volumes:
-      - ./frontend/nginx.host-backend.hostnet.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./backend/data/nginx-ui.conf:/etc/nginx/conf.d/default.conf:ro

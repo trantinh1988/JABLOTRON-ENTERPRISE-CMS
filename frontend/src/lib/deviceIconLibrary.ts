@@ -162,6 +162,10 @@ export const MAP_STATUS_LEGEND: { key: string; label: string; color: string }[] 
   { key: 'fault', label: 'Fault', color: mapStatusColor('fault') },
 ]
 
+export function mapStatusLegendLabel(status: string): string {
+  return MAP_STATUS_LEGEND.find((s) => s.key === status)?.label ?? status
+}
+
 /** Số địa chỉ thiết bị: device_num hoặc parse từ global_id (…_DEV_01 → 1). */
 export function resolveDeviceAddressNum(device: {
   device_num?: number | null

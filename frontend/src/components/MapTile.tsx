@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Maximize2, Map as MapIcon } from 'lucide-react'
+import { ChevronDown, Maximize2, Map as MapIcon, Plus } from 'lucide-react'
 import type { Device, FloorMap, Panel } from '../api/client'
 import { InteractiveFloorMap } from './InteractiveFloorMap'
 import { readMapBgFit, type MapMarkerLabelMode } from '../lib/deviceIconLibrary'
@@ -220,8 +220,8 @@ export const MapTile = memo(function MapTile({
             className="flex h-full w-full flex-col items-center justify-center gap-1.5 bg-mist/30 text-steel/50 hover:bg-mist/50 hover:text-steel"
             onClick={() => setMenuOpen(true)}
           >
-            <MapIcon className="size-6" />
-            <span className="text-[11px] font-medium">{vi.mapGridSlotEmpty}</span>
+            <Plus className="size-6" />
+            <span className="text-[11px] font-medium">{vi.mapGridAddCell}</span>
           </button>
         )}
       </div>

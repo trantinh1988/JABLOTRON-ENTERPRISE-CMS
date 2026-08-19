@@ -10,8 +10,6 @@ import { DEVICE_FAMILY_KEYS, familyOfType, normalizeDeviceLink } from '../lib/de
 import { reactionChipLabel } from '../lib/deviceReaction'
 import { exportTableExcel, exportTablePdf, reportStamp } from '../lib/tableExport'
 import {
-  armedStateLabel,
-  connectionLabel,
   deviceStateLabel,
   deviceTypeLabel,
   effectiveDeviceStatus,
@@ -185,14 +183,6 @@ export function StatusPage({
     setStateFilter((prev) => (prev === key ? '' : key))
   }
 
-  function togglePanel(id: string) {
-    setPanelFilter((prev) => {
-      const next = prev === id ? '' : id
-      if (next !== prev) setZoneFilter('')
-      return next
-    })
-  }
-
   const exportHeaders = [
     'ID',
     vi.label,
@@ -258,7 +248,6 @@ export function StatusPage({
     <div className="w-full px-4 py-4 sm:px-5 lg:px-6 lg:py-5">
       <PageHeader
         title={vi.statusPageTitle}
-        hint={vi.statusPageHint}
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <span
@@ -337,36 +326,6 @@ export function StatusPage({
           onClick={() => toggleStat('ok')}
         />
       </div>
-
-      <Card className="mb-4">
-        <h3 className="mb-3 text-sm font-semibold">{vi.panels}</h3>
-        <div className="flex gap-2 overflow-x-auto pb-0.5">
-          {panels.map((p) => {
-            const active = panelFilter === p.panel_id
-            return (
-              <button
-                key={p.panel_id}
-                type="button"
-                onClick={() => togglePanel(p.panel_id)}
-                className={`min-w-[220px] shrink-0 rounded-lg border px-3 py-2.5 text-left transition ${
-                  active
-                    ? 'border-accent/50 bg-accent/10 ring-1 ring-accent/30'
-                    : 'border-line/70 bg-fog/60 hover:border-line hover:bg-mist/40'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-sm font-medium">{p.display_name}</span>
-                  <ArmedBadge state={p.armed_state} />
-                </div>
-                <p className="mt-1 font-mono text-[11px] text-steel/55">
-                  {p.panel_id} · {labelOf(connectionLabel, p.connection)} · {p.device_count} {vi.devices}
-                </p>
-              </button>
-            )
-          })}
-          {!panels.length && <p className="text-sm text-steel/50">{vi.noPanels}</p>}
-        </div>
-      </Card>
 
       <Card className="mb-3 py-3">
         <div className="grid grid-cols-[minmax(0,1.35fr)_repeat(4,minmax(0,1fr))_auto] items-center gap-2">
@@ -629,15 +588,5 @@ function StatCard({
       <p className="font-mono text-[11px] text-steel/55">{label}</p>
       <p className={`mt-1 text-2xl font-semibold tabular-nums ${toneClass}`}>{value}</p>
     </button>
-  )
-}
-
-function ArmedBadge({ state }: { state: string }) {
-  const tone =
-    state === 'armed' ? 'bg-danger/10 text-danger' : state === 'partial' ? 'bg-warn/10 text-warn' : 'bg-ok/10 text-ok'
-  return (
-    <span className={`shrink-0 rounded px-1.5 py-0.5 font-mono text-[10px] ${tone}`}>
-      {labelOf(armedStateLabel, state)}
-    </span>
   )
 }

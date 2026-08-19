@@ -1,0 +1,53 @@
+"""Port UI / API persistence and nginx generation."""
+
+from pathlib import Path
+
+from app.iot_core import host_ports as hp
+
+
+def test_defaults_when_missing(tmp_path: Path):
+    hp.set_ports_path(tmp_path / "missing.json")
+    try:
+        state = hp.load_ports()
+        assert state["ui_port"] == 8080
+        assert state["api_port"] == 8010
+    finally:
+        hp.set_ports_path(None)
+
+
+def test_save_and_load(tmp_path: Path):
+    hp.set_ports_path(tmp_path / "host_ports.json")
+    try:
+        saved = hp.save_ports(9090, 8011)
+        assert saved == {"ui_port": 9090, "api_port": 8011}
+        assert hp.load_ports() == saved
+    finally:
+        hp.set_ports_path(None)
+
+
+def test_reject_same_and_range():
+    assert hp.validate_ports(8080, 8080) == "ports_equal"
+    assert hp.validate_ports(80, 8010) == "invalid_port"
+    assert hp.validate_ports(8080, 8010) is None
+
+
+def test_nginx_windows_bridge():
+    text = hp._nginx_conf(ui_port=9090, api_port=8011, hostnet=False)
+    assert "listen 80;" in text
+    assert "host.docker.internal:8011" in text
+    assert "9090" in text.split("\n")[0]
+    assert "location /api/system/backup" in text
+    assert "client_max_body_size 256m;" in text
+
+
+def test_nginx_linux_hostnet():
+    text = hp._nginx_conf(ui_port=9090, api_port=8011, hostnet=True)
+    assert "listen 9090;" in text
+    assert "127.0.0.1:8011" in text
+    assert "host.docker.internal" not in text
+
+
+def test_cors_includes_ui_port():
+    origins = hp.cors_origins(9090)
+    assert "http://127.0.0.1:9090" in origins
+    assert "http://localhost:5173" in origins

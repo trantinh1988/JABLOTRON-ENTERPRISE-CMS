@@ -4,6 +4,7 @@ import {
   type AlarmTrailPoint,
   type AlarmTrailSnapshot,
 } from '../lib/alarmTrail'
+import { isAlarmTrailEnabled } from '../lib/systemPrefs'
 
 const TRAIL_EVENT = 'cms:alarm-trail'
 
@@ -12,8 +13,6 @@ let recording = false
 let holdUntil = 0
 let hidden = false
 let holdTimer: number | null = null
-/** Thiết bị đang còn alarm trong phiên — không gắn số lần hai. */
-const openIds = new Set<string>()
 
 function clearHoldTimer(): void {
   if (holdTimer == null) return
@@ -31,7 +30,6 @@ function pruneExpired(now = Date.now()): boolean {
     points = []
     holdUntil = 0
     hidden = false
-    openIds.clear()
     clearHoldTimer()
     return true
   }
@@ -78,15 +76,15 @@ export function appendAlarmTrailPoint(
   mapId: number | string,
   at = Date.now(),
 ): void {
+  if (!isAlarmTrailEnabled()) return
   const mid = typeof mapId === 'number' ? mapId : Number(mapId)
   const id = String(deviceId || '')
   if (!id || !Number.isFinite(mid)) return
-  const next = appendTrailPoint(points, { deviceId: id, mapId: mid, at }, { openIds })
+  const next = appendTrailPoint(points, { deviceId: id, mapId: mid, at })
   if (next.length === points.length && next[next.length - 1]?.seq === points[points.length - 1]?.seq) {
     return
   }
   points = next
-  openIds.add(id)
   recording = true
   holdUntil = 0
   hidden = false
@@ -102,7 +100,6 @@ export function endAlarmTrailRecording(now = Date.now()): void {
     points = []
     holdUntil = 0
     hidden = false
-    openIds.clear()
     clearHoldTimer()
     emit()
     return
@@ -118,21 +115,16 @@ export function setAlarmTrailHidden(value: boolean): void {
   emit()
 }
 
-export function releaseTrailDevices(deviceIds: readonly string[]): void {
-  let changed = false
-  for (const id of deviceIds) {
-    if (openIds.delete(String(id))) changed = true
-  }
-  if (changed) emit()
+export function releaseTrailDevices(_deviceIds: readonly string[]): void {
+  /* Quay lại thiết bị vẫn ghi điểm — không khóa theo alarm đang mở. */
 }
 
 export function clearAlarmTrail(): void {
-  if (!points.length && !recording && !holdUntil && !hidden && !openIds.size) return
+  if (!points.length && !recording && !holdUntil && !hidden) return
   points = []
   recording = false
   holdUntil = 0
   hidden = false
-  openIds.clear()
   clearHoldTimer()
   emit()
 }

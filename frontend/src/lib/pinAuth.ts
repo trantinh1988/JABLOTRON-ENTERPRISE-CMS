@@ -14,9 +14,18 @@ export function pinUsersOf(users: PanelUser[]): PanelUser[] {
   return users.filter((u) => Boolean(u.code_label && /^\d{4,10}$/.test(u.code_label)))
 }
 
+export function userIsAdmin(user: Pick<PanelUser, 'permissions'>): boolean {
+  return user.permissions.includes('admin')
+}
+
 export function userCanPinAction(user: PanelUser, need: PinNeed): boolean {
-  if (user.permissions.includes('admin')) return true
+  if (userIsAdmin(user)) return true
   return user.permissions.includes(need)
+}
+
+export function usersMatchingPin(users: PanelUser[], pin: string): PanelUser[] {
+  if (!/^\d{4,10}$/.test(pin)) return []
+  return pinUsersOf(users).filter((u) => u.code_label === pin)
 }
 
 export function resolvePinUser(

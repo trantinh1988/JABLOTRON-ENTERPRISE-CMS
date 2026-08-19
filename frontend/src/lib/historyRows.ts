@@ -32,6 +32,7 @@ export type HistoryRow = {
 }
 
 const SNAP_MATCH_MS = 2 * 60 * 1000
+const HISTORY_DEDUP_MS = 3000
 
 /** Lịch sử: Báo động / TMP / Lỗi (Fault) — không gồm OK, ACT, Loss. */
 const HISTORY_PAGE_STATES = new Set(['alarm', 'tamper', 'fault'])
@@ -299,6 +300,52 @@ export function isHistoryPageEvent(e: CmsEvent): boolean {
   return false
 }
 
+/** One activation = one row: trigger ≡ device_state alarm, same TMP/Fault, same map/panel. */
+export function historyIncidentKey(e: CmsEvent): string {
+  const p = payloadOf(e)
+  if (e.type === 'map_trail_snap') {
+    return `map_trail|${asString(e.map_id) || asString(p.map_id)}`
+  }
+  if (e.type === 'panel_updated') {
+    return `panel_updated|${e.panel_id || asString(p.panel_id)}`
+  }
+  const deviceId = e.device_id || asString(p.device_id)
+  const panelId = e.panel_id || asString(p.panel_id)
+  const status =
+    e.type === 'device_alarm_trigger' ? 'alarm' : String(e.state || e.type || '').toLowerCase()
+  return `device|${panelId}|${deviceId}|${status}`
+}
+
+function preferHistoryEvent(a: CmsEvent, b: CmsEvent): CmsEvent {
+  const aImg = Boolean(snapFromEvent(a))
+  const bImg = Boolean(snapFromEvent(b))
+  if (bImg && !aImg) return b
+  if (aImg && !bImg) return a
+  const at = parseSnapAt(a.ts, 0)
+  const bt = parseSnapAt(b.ts, 0)
+  if (bt > at) return b
+  const aid = typeof a.id === 'number' ? a.id : 0
+  const bid = typeof b.id === 'number' ? b.id : 0
+  return bid > aid ? b : a
+}
+
+export function dedupeHistoryEvents(events: CmsEvent[]): CmsEvent[] {
+  const out: CmsEvent[] = []
+  for (const e of events) {
+    const key = historyIncidentKey(e)
+    const t = parseSnapAt(e.ts, 0)
+    const idx = out.findIndex(
+      (row) => historyIncidentKey(row) === key && Math.abs(parseSnapAt(row.ts, 0) - t) < HISTORY_DEDUP_MS,
+    )
+    if (idx < 0) {
+      out.push(e)
+      continue
+    }
+    out[idx] = preferHistoryEvent(out[idx], e)
+  }
+  return out
+}
+
 export function expandHistoryEvents(events: CmsEvent[]): CmsEvent[] {
   const out: CmsEvent[] = []
   for (const e of events) {
@@ -322,7 +369,7 @@ export function expandHistoryEvents(events: CmsEvent[]): CmsEvent[] {
     if (!isHistoryPageEvent(e)) continue
     out.push(e)
   }
-  return out
+  return dedupeHistoryEvents(out)
 }
 
 export function eventTypeOptions(events: CmsEvent[]): string[] {

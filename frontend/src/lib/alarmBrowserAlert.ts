@@ -1,24 +1,44 @@
 const TITLE_BASE_KEY = 'cms:doc-title-base'
 const NOTIFY_PREF_KEY = 'cms:alarm-desktop-notify'
+const FLASH_PREF_KEY = 'cms:alarm-title-flash'
 const FLASH_MS = 12000
 
 let flashTimer: number | undefined
 let flashOn = false
 
-export function isAlarmDesktopNotifyEnabled(): boolean {
+function readFlag(key: string, defaultOn: boolean): boolean {
   try {
-    return localStorage.getItem(NOTIFY_PREF_KEY) !== '0'
+    const raw = localStorage.getItem(key)
+    if (raw === null) return defaultOn
+    return raw !== '0'
   } catch {
-    return true
+    return defaultOn
   }
 }
 
-export function setAlarmDesktopNotifyEnabled(on: boolean): void {
+function writeFlag(key: string, on: boolean): void {
   try {
-    localStorage.setItem(NOTIFY_PREF_KEY, on ? '1' : '0')
+    localStorage.setItem(key, on ? '1' : '0')
   } catch {
     /* ignore */
   }
+}
+
+export function isAlarmDesktopNotifyEnabled(): boolean {
+  return readFlag(NOTIFY_PREF_KEY, true)
+}
+
+export function setAlarmDesktopNotifyEnabled(on: boolean): void {
+  writeFlag(NOTIFY_PREF_KEY, on)
+}
+
+/** Mặc định bật — giữ hành vi nhấp tiêu đề khi tab ẩn. */
+export function isAlarmTitleFlashEnabled(): boolean {
+  return readFlag(FLASH_PREF_KEY, true)
+}
+
+export function setAlarmTitleFlashEnabled(on: boolean): void {
+  writeFlag(FLASH_PREF_KEY, on)
 }
 
 export async function ensureAlarmNotifyPermission(): Promise<NotificationPermission | 'unsupported'> {
@@ -31,6 +51,16 @@ export async function ensureAlarmNotifyPermission(): Promise<NotificationPermiss
   } catch {
     return Notification.permission
   }
+}
+
+export function setDocumentTitleBase(title: string): void {
+  const next = title.trim() || 'Jablotron Enterprise CMS'
+  try {
+    sessionStorage.setItem(TITLE_BASE_KEY, next)
+  } catch {
+    /* ignore */
+  }
+  if (!flashTimer) document.title = next
 }
 
 function stopTitleFlash(): void {
@@ -100,7 +130,7 @@ export function alertBrowserOnAlarm(opts: {
   }
 
   if (document.hidden || document.visibilityState !== 'visible') {
-    startTitleFlash(caption)
+    if (isAlarmTitleFlashEnabled()) startTitleFlash(caption)
   }
 
   if (!isAlarmDesktopNotifyEnabled()) return

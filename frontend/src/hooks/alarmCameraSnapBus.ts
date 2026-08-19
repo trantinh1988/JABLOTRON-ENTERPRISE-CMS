@@ -143,6 +143,8 @@ export const ALARM_SNAP_STACK = 3
 
 /**
  * Tối đa 3 ảnh sự kiện liên tiếp khi chưa tắt báo động (không gộp 1 camera).
+ * Thứ tự cột: mới nhất trên cùng; ưu tiên camera của thiết bị đang focus,
+ * rồi hàng đợi báo động, rồi camera khớp luật automation.
  */
 export function snapsForAlarmFocus(
   items: AlarmCameraSnap[],

@@ -109,16 +109,15 @@
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02);
   }
 
-  /* Section rows: LED layout — gọn, cân đối trong cột */
+  /* Section rows — cùng bo viền với Modal Phân khu */
   .section-panel {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    border-radius: 0.65rem;
+    align-items: stretch;
+    border-radius: 0.75rem;
     border: 1px solid var(--color-line);
     background: color-mix(in srgb, var(--color-mist) 70%, var(--color-fog));
     overflow: hidden;
-    padding: 0.35rem 0.4rem;
   }
 
   .section-panel-list {
@@ -126,11 +125,8 @@
     flex: 1;
     flex-direction: column;
     width: 100%;
-    max-width: 17.5rem;
     min-height: 0;
     overflow-y: auto;
-    border-radius: 0.45rem;
-    border: 1px solid color-mix(in srgb, var(--color-line) 75%, transparent);
     background: color-mix(in srgb, var(--color-fog) 55%, transparent);
   }
 

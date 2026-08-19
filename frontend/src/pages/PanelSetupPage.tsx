@@ -864,6 +864,7 @@ function UsersTab({
           <Plus className="size-3.5" /> {vi.addUser}
         </Btn>
       </div>
+      <p className="text-[11px] text-steel/60">{vi.usersPinLoginHint}</p>
 
       {(creating || editing) && (
         <Card>
