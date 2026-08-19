@@ -158,6 +158,13 @@ async function migrateLegacyIfNeeded(remote: SystemSettings): Promise<SystemSett
   return next
 }
 
+const EMPTY_SETTINGS: SystemSettings = {
+  sound_enabled: false,
+  trail_enabled: true,
+  site_title: '',
+  sounds: {},
+}
+
 export async function hydrateAlertSounds(): Promise<SystemSettings> {
   if (hydrated && catalog) return catalog
   if (!hydratePromise) {
@@ -168,9 +175,9 @@ export async function hydrateAlertSounds(): Promise<SystemSettings> {
       const next = await migrateLegacyIfNeeded(catalog ?? remote)
       hydrated = true
       return next
-    })().catch((err) => {
+    })().catch(() => {
       hydratePromise = null
-      throw err
+      return catalog ?? EMPTY_SETTINGS
     })
   }
   return hydratePromise

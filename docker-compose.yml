@@ -16,13 +16,13 @@ services:
     build:
       context: ./backend
     container_name: jablotron-cms-backend
-    restart: "no"
+    restart: unless-stopped
     volumes:
       - ./keys:/keys:ro
       - ./backend/data:/app/data
       - /dev:/dev
     environment:
-      CMS_USB_MOCK_MODE: "false"
+      CMS_USB_MOCK_MODE: "true"
       CMS_JABLOTRON_VENDOR_ID: "0x16D6"
       CMS_JABLOTRON_PRODUCT_ID: "0x0008"
       CMS_PUBLIC_KEY_PATH: /keys/public_key.pem
@@ -32,12 +32,27 @@ services:
     privileged: true
     expose:
       - "8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 8s
 
   frontend:
     build:
       context: ./frontend
     container_name: jablotron-cms-frontend
     restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
     ports:
       - "${CMS_UI_PORT:-8080}:80"
     volumes:

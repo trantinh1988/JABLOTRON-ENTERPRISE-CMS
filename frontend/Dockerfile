@@ -15,9 +15,10 @@ COPY . .
 # Typecheck vẫn chạy local: npm run typecheck
 RUN npm run build:docker
 
-# Serve stage — nginx proxies /api and /ws to backend
+# Serve stage — mặc định proxy tới service `backend` (all-in-docker).
+# USB host compose mount nginx-ui.conf đè file này.
 FROM nginx:1.27-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.docker-backend.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80

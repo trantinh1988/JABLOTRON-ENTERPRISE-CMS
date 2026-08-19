@@ -25,7 +25,7 @@ export function AlarmMapFocus() {
   const lastToken = useRef(0)
 
   useEffect(() => {
-    void hydrateAlertSounds()
+    void hydrateAlertSounds().catch(() => undefined)
     return subscribeAlarmMapFocus((req: AlarmMapFocusRequest) => {
       if (req.token === lastToken.current) return
       lastToken.current = req.token
