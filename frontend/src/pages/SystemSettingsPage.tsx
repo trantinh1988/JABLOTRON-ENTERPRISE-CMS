@@ -26,6 +26,8 @@ import {
   getAlertSoundMeta,
   hydrateAlertSounds,
   persistSiteTitle,
+  persistSiteLogo,
+  clearSiteLogo,
   persistSystemSoundPref,
   persistSystemTrailPref,
   playAlertSound,
@@ -33,6 +35,7 @@ import {
   SITE_TITLE_MAX,
   DEFAULT_SITE_TITLE,
   validateAlertSoundFile,
+  validateLogoFile,
   type AlertSoundStatus,
 } from '../lib/alarmSounds'
 import { mapStatusColor } from '../lib/deviceIconLibrary'
@@ -153,11 +156,15 @@ export function SystemSettingsPage({ writeAllowed = true, panels = [], onRefresh
   const [portsBusy, setPortsBusy] = useState(false)
   const [portsMsg, setPortsMsg] = useState<string | null>(null)
   const [portsMsgOk, setPortsMsgOk] = useState(true)
+  const [clientUrl, setClientUrl] = useState<string | null>(null)
   const [siteTitle, setSiteTitle] = useState('')
   const [siteTitleSaved, setSiteTitleSaved] = useState('')
+  const [siteLogoName, setSiteLogoName] = useState<string | null>(null)
+  const [siteLogoUrl, setSiteLogoUrl] = useState<string | null>(null)
   const [siteBusy, setSiteBusy] = useState(false)
   const [siteMsg, setSiteMsg] = useState<string | null>(null)
   const [siteMsgOk, setSiteMsgOk] = useState(true)
+  const logoRef = useRef<HTMLInputElement | null>(null)
   const fileRefs = useRef<Partial<Record<AlertSoundStatus, HTMLInputElement | null>>>({})
 
   useEffect(() => {
@@ -179,6 +186,8 @@ export function SystemSettingsPage({ writeAllowed = true, panels = [], onRefresh
         const title = s.site_title?.trim() ?? ''
         setSiteTitle(title)
         setSiteTitleSaved(title)
+        setSiteLogoName(s.site_logo?.name ?? null)
+        setSiteLogoUrl(s.site_logo?.url ?? null)
       })
       .catch(() => {
         if (!cancelled) setPageError(vi.systemLoadFail)
@@ -196,6 +205,7 @@ export function SystemSettingsPage({ writeAllowed = true, panels = [], onRefresh
         const next = { ui: p.ui_port, api: p.api_port }
         setPortsDraft(next)
         setPortsSaved(next)
+        setClientUrl(p.client_url ?? null)
       })
       .catch(() => undefined)
     return () => {
@@ -406,6 +416,49 @@ export function SystemSettingsPage({ writeAllowed = true, panels = [], onRefresh
     }
   }
 
+  const onPickLogo = async (file: File | undefined) => {
+    if (!file) return
+    const invalid = validateLogoFile(file)
+    if (invalid) {
+      setSiteMsg(invalid === 'too_big' ? vi.systemLogoTooBig : vi.systemLogoBadType)
+      setSiteMsgOk(false)
+      return
+    }
+    setSiteBusy(true)
+    setSiteMsg(null)
+    setPageError(null)
+    try {
+      const next = await persistSiteLogo(file)
+      setSiteLogoName(next.site_logo?.name ?? file.name)
+      setSiteLogoUrl(next.site_logo?.url ?? null)
+      setSiteMsg(vi.systemLogoSaved)
+      setSiteMsgOk(true)
+    } catch (e) {
+      setSiteMsg(e instanceof Error ? e.message : vi.systemSaveFail)
+      setSiteMsgOk(false)
+    } finally {
+      setSiteBusy(false)
+      if (logoRef.current) logoRef.current.value = ''
+    }
+  }
+
+  const onClearLogo = async () => {
+    setSiteBusy(true)
+    setSiteMsg(null)
+    try {
+      await clearSiteLogo()
+      setSiteLogoName(null)
+      setSiteLogoUrl(null)
+      setSiteMsg(vi.systemLogoCleared)
+      setSiteMsgOk(true)
+    } catch (e) {
+      setSiteMsg(e instanceof Error ? e.message : vi.systemSaveFail)
+      setSiteMsgOk(false)
+    } finally {
+      setSiteBusy(false)
+    }
+  }
+
   const onSavePorts = async () => {
     const ui = Number(portsDraft.ui)
     const api = Number(portsDraft.api)
@@ -430,6 +483,7 @@ export function SystemSettingsPage({ writeAllowed = true, panels = [], onRefresh
       const next = await setHostPorts(ui, api)
       setPortsSaved({ ui: next.ui_port, api: next.api_port })
       setPortsDraft({ ui: next.ui_port, api: next.api_port })
+      setClientUrl(next.client_url ?? null)
       const pagePort = Number(
         window.location.port || (window.location.protocol === 'https:' ? '443' : '80'),
       )
@@ -530,6 +584,46 @@ export function SystemSettingsPage({ writeAllowed = true, panels = [], onRefresh
             </Field>
           </div>
         </form>
+        <p className="text-[11px] text-steel/55">{vi.systemSiteTitleHint}</p>
+        <div className="space-y-2">
+          <Field label={vi.systemLogoTitle}>
+            <div className="flex min-w-0 flex-wrap items-center gap-3">
+              {siteLogoUrl ? (
+                <img
+                  src={siteLogoUrl}
+                  alt=""
+                  className="size-12 shrink-0 rounded-md bg-fog object-contain ring-1 ring-line/80"
+                />
+              ) : (
+                <div className="flex size-12 shrink-0 items-center justify-center rounded-md bg-fog text-[10px] font-medium text-steel/45 ring-1 ring-line/80">
+                  Logo
+                </div>
+              )}
+              <input
+                ref={logoRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml,.png,.jpg,.jpeg,.webp,.svg"
+                className={`${inputClass} max-w-sm cursor-pointer file:mr-3 file:rounded-md file:border-0 file:bg-fog file:px-2 file:py-1 file:text-[11px] file:font-semibold file:text-ink`}
+                disabled={!writeAllowed || siteBusy}
+                onChange={(e) => {
+                  void onPickLogo(e.target.files?.[0])
+                }}
+              />
+              <Btn
+                type="button"
+                tone="ghost"
+                disabled={!writeAllowed || siteBusy || !siteLogoName}
+                onClick={() => void onClearLogo()}
+              >
+                {vi.systemLogoClear}
+              </Btn>
+            </div>
+          </Field>
+          {siteLogoName && (
+            <p className="font-mono text-[11px] text-steel/65">{siteLogoName}</p>
+          )}
+          <p className="text-[11px] text-steel/55">{vi.systemLogoHint}</p>
+        </div>
         {siteMsg && (
           <p className={`text-[11px] ${siteMsgOk ? 'text-ok' : 'text-danger'}`}>{siteMsg}</p>
         )}
@@ -637,6 +731,12 @@ export function SystemSettingsPage({ writeAllowed = true, panels = [], onRefresh
           <span className="text-steel/35"> · </span>
           {`http://127.0.0.1:${portsDraft.api}/api`}
         </p>
+        {clientUrl && (
+          <p className="truncate text-[11px] text-steel/70">
+            {vi.systemClientHint}{' '}
+            <span className="font-mono text-ink">{clientUrl}</span>
+          </p>
+        )}
         {portsMsg && (
           <p className={`text-[11px] ${portsMsgOk ? 'text-ok' : 'text-danger'}`}>{portsMsg}</p>
         )}

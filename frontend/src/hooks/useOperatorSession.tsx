@@ -9,12 +9,16 @@ import {
   type ReactNode,
 } from 'react'
 import { listPanelUsers, type Panel, type PanelUser } from '../api/client'
+import { vi } from '../i18n/vi'
 import {
   hasPinUsers,
   hydrateStoredSession,
+  readScreenLocked,
   readStoredSession,
   sessionFromPin,
+  sessionPinMatches,
   setupOperatorSession,
+  writeScreenLocked,
   writeStoredSession,
   type OperatorSession,
 } from '../lib/operatorSession'
@@ -31,6 +35,10 @@ type OperatorSessionContextValue = {
   canSettings: boolean
   login: (pin: string) => LoginResult
   logout: () => void
+  lock: () => void
+  unlock: (pin: string) => LoginResult
+  locked: boolean
+  canLock: boolean
   enterSetup: () => LoginResult
   reloadUsers: () => Promise<void>
 }
@@ -48,6 +56,7 @@ export function OperatorSessionProvider({
 }) {
   const [allUsers, setAllUsers] = useState<PanelUser[]>([])
   const [session, setSession] = useState<OperatorSession | null>(null)
+  const [locked, setLocked] = useState(false)
   const [ready, setReady] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -55,6 +64,7 @@ export function OperatorSessionProvider({
   const panelKey = panels.map((p) => p.panel_id).join('|')
   const panelsRef = useRef(panels)
   panelsRef.current = panels
+  const lockReadyRef = useRef(false)
 
   const reloadUsers = useCallback(async () => {
     setLoading(true)
@@ -86,6 +96,15 @@ export function OperatorSessionProvider({
       const stored = prev ?? readStoredSession()
       const next = hydrateStoredSession(stored, allUsers)
       writeStoredSession(next)
+      if (!next) {
+        writeScreenLocked(false)
+        setLocked(false)
+      } else if (!lockReadyRef.current) {
+        const keepLock = Boolean(!next.setup && next.pin && readScreenLocked())
+        writeScreenLocked(keepLock)
+        setLocked(keepLock)
+      }
+      lockReadyRef.current = true
       return next
     })
     setReady(true)
@@ -94,6 +113,10 @@ export function OperatorSessionProvider({
   const apply = useCallback((next: OperatorSession | null) => {
     writeStoredSession(next)
     setSession(next)
+    if (!next) {
+      writeScreenLocked(false)
+      setLocked(false)
+    }
   }, [])
 
   const login = useCallback(
@@ -101,6 +124,8 @@ export function OperatorSessionProvider({
       const result = sessionFromPin(allUsers, pin.trim())
       if ('error' in result) return { error: result.error }
       apply(result)
+      writeScreenLocked(false)
+      setLocked(false)
       return { ok: true }
     },
     [allUsers, apply],
@@ -109,6 +134,21 @@ export function OperatorSessionProvider({
   const logout = useCallback(() => {
     apply(null)
   }, [apply])
+
+  const lock = useCallback(() => {
+    if (!session || session.setup || !session.pin) return
+    writeScreenLocked(true)
+    setLocked(true)
+  }, [session])
+
+  const unlock = useCallback((pin: string): LoginResult => {
+    const current = session
+    if (!current) return { error: vi.keypadWrongCode }
+    if (!sessionPinMatches(current, pin.trim())) return { error: vi.lockWrongPin }
+    writeScreenLocked(false)
+    setLocked(false)
+    return { ok: true }
+  }, [session])
 
   const enterSetup = useCallback((): LoginResult => {
     if (hasPinUsers(allUsers)) {
@@ -120,6 +160,7 @@ export function OperatorSessionProvider({
 
   const canSetup = !hasPinUsers(allUsers)
   const canSettings = Boolean(session?.isAdmin)
+  const canLock = Boolean(session && !session.setup && session.pin)
 
   const value = useMemo<OperatorSessionContextValue>(
     () => ({
@@ -130,8 +171,12 @@ export function OperatorSessionProvider({
       allUsers,
       canSetup,
       canSettings,
+      canLock,
+      locked,
       login,
       logout,
+      lock,
+      unlock,
       enterSetup,
       reloadUsers,
     }),
@@ -143,8 +188,12 @@ export function OperatorSessionProvider({
       allUsers,
       canSetup,
       canSettings,
+      canLock,
+      locked,
       login,
       logout,
+      lock,
+      unlock,
       enterSetup,
       reloadUsers,
     ],
@@ -163,8 +212,12 @@ const FALLBACK: OperatorSessionContextValue = {
   allUsers: [],
   canSetup: false,
   canSettings: false,
+  canLock: false,
+  locked: false,
   login: () => ({ error: 'no_session' }),
   logout: () => {},
+  lock: () => {},
+  unlock: () => ({ error: 'no_session' }),
   enterSetup: () => ({ error: 'no_session' }),
   reloadUsers: async () => {},
 }

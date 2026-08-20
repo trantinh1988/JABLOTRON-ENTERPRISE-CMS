@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -98,15 +99,15 @@ def cors_origins_env(ui_port: int) -> str:
 
 
 def running_in_docker() -> bool:
-    """Docker Linux container must not rewrite Windows host nginx-ui.conf (USB stream)."""
+    """Docker container must not rewrite host nginx-ui.conf (USB stream)."""
     if os.environ.get("CMS_IN_DOCKER", "").strip().lower() in {"1", "true", "yes"}:
         return True
     return Path("/.dockerenv").exists()
 
 
-def _nginx_conf(*, ui_port: int, api_port: int, hostnet: bool) -> str:
-    listen = str(ui_port) if hostnet else "80"
-    upstream = f"127.0.0.1:{api_port}" if hostnet else f"host.docker.internal:{api_port}"
+def _nginx_conf(*, ui_port: int, api_port: int) -> str:
+    listen = "80"
+    upstream = f"host.docker.internal:{api_port}"
     # proxy_pass không kèm URI — giữ /api /media /ws để WebSocket + stream HID không 404/gãy.
     return (
         f"# generated — UI :{ui_port}  API :{api_port}\n"
@@ -115,6 +116,10 @@ def _nginx_conf(*, ui_port: int, api_port: int, hostnet: bool) -> str:
         "    server_name _;\n"
         "    root /usr/share/nginx/html;\n"
         "    index index.html;\n"
+        "\n"
+        "    location = /index.html {\n"
+        "        add_header Cache-Control \"no-store, no-cache, must-revalidate\" always;\n"
+        "    }\n"
         "\n"
         "    location / {\n"
         "        try_files $uri $uri/ /index.html;\n"
@@ -184,10 +189,9 @@ def write_runtime_files(ui_port: int, api_port: int) -> None:
         return
     data_dir = BACKEND_ROOT / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
-    hostnet = current_os() == "linux"
     _replace_runtime_file(
         nginx_runtime_path(),
-        _nginx_conf(ui_port=ui_port, api_port=api_port, hostnet=hostnet),
+        _nginx_conf(ui_port=ui_port, api_port=api_port),
         "utf-8",
     )
     env_runtime_path().write_text(
@@ -221,8 +225,6 @@ def ensure_runtime_files() -> dict[str, int]:
 
 
 def compose_file() -> Path:
-    if current_os() == "linux":
-        return REPO_ROOT / "docker-compose.usb-host.linux.yml"
     return REPO_ROOT / "docker-compose.usb-host.yml"
 
 
@@ -352,10 +354,25 @@ def apply_saved_ports(prev_api: int) -> dict[str, Any]:
     return ports_status(applied=docker_err is None, detail=docker_err)
 
 
+def lan_ipv4() -> str | None:
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.settimeout(0.4)
+        sock.connect(("1.1.1.1", 80))
+        ip = str(sock.getsockname()[0] or "")
+        sock.close()
+    except OSError:
+        return None
+    if not ip or ip.startswith("127."):
+        return None
+    return ip
+
+
 def ports_status(*, applied: bool | None = None, detail: str | None = None) -> dict[str, Any]:
     state = ensure_runtime_files()
     ui = state["ui_port"]
     api = state["api_port"]
+    lan = lan_ipv4()
     return {
         "ui_port": ui,
         "api_port": api,
@@ -363,6 +380,8 @@ def ports_status(*, applied: bool | None = None, detail: str | None = None) -> d
         "api_port_default": DEFAULT_API_PORT,
         "ui_url": f"http://127.0.0.1:{ui}",
         "api_url": f"http://127.0.0.1:{api}",
+        "lan_ip": lan,
+        "client_url": f"http://{lan}:{ui}" if lan else None,
         "os": current_os(),
         "applied": applied,
         "detail": detail,

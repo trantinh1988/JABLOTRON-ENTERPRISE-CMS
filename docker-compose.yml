@@ -1,10 +1,9 @@
 # Jablotron Enterprise CMS — Docker Compose (mặc định: USB workstation)
 #
-# Windows + Linux (USB HID thật): UI Docker, backend native :8010
-#   Windows: .\scripts\deploy-usb-windows.ps1
-#   Linux:   ./scripts/deploy-usb-linux.sh
+# Windows (USB HID thật): UI Docker, backend native :8010
+#   .\scripts\deploy-usb-windows.ps1
 #
-# VPS / demo không USB (backend cũng trong Docker):
+# Demo không USB (backend cũng trong Docker):
 #   docker compose -f docker-compose.all-in-docker.yml up -d --build
 #
 # Không chạy docker backend trên máy USB: tranh cms.db với backend native.
@@ -41,5 +40,5 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      # File trong git — proxy native backend :8010 (Windows/Linux USB).
+      # File trong git — proxy native backend :8010 (Windows USB).
       - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro

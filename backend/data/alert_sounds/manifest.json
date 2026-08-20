@@ -2,6 +2,11 @@
   "sound_enabled": true,
   "trail_enabled": true,
   "site_title": "Coopmart 230 Nguyễn Trãi",
+  "site_logo": {
+    "name": "logo.png",
+    "url": "/media/brand/logo_152391d0bd9d4be082db3f2d3d80d7bd.png",
+    "type": "image/png"
+  },
   "sounds": {
     "alarm": {
       "name": "sign0001.wav",

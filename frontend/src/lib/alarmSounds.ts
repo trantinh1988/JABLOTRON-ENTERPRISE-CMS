@@ -1,8 +1,10 @@
 import {
   deleteAlertSound,
+  deleteSiteLogo,
   getSystemSettings,
   patchSystemSettings,
   uploadAlertSound,
+  uploadSiteLogo,
   type AlertSoundSlot,
   type SystemSettings,
 } from '../api/client'
@@ -30,6 +32,7 @@ const settingsListeners = new Set<() => void>()
 
 export const DEFAULT_SITE_TITLE = `${vi.brandTitle} ${vi.brandAccent}`
 export const SITE_TITLE_MAX = 80
+export const LOGO_MAX_BYTES = 1 * 1024 * 1024
 
 export function isAlertSoundStatus(value: string): value is AlertSoundStatus {
   return (ALERT_SOUND_STATUSES as readonly string[]).includes(value)
@@ -50,6 +53,11 @@ function applyCatalog(next: SystemSettings): SystemSettings {
 export function getSiteTitle(): string {
   const custom = catalog?.site_title?.trim()
   return custom || DEFAULT_SITE_TITLE
+}
+
+export function getSiteLogoUrl(): string | null {
+  const url = catalog?.site_logo?.url?.trim()
+  return url || null
 }
 
 export function subscribeSystemSettings(fn: () => void): () => void {
@@ -228,6 +236,35 @@ export async function persistSystemTrailPref(on: boolean): Promise<SystemSetting
 
 export async function persistSiteTitle(title: string): Promise<SystemSettings> {
   const next = applyCatalog(await patchSystemSettings({ site_title: title.trim().slice(0, SITE_TITLE_MAX) }))
+  hydrated = true
+  hydratePromise = Promise.resolve(next)
+  return next
+}
+
+export function validateLogoFile(file: File): string | null {
+  if (file.size > LOGO_MAX_BYTES) return 'too_big'
+  const type = (file.type || '').toLowerCase()
+  const name = file.name.toLowerCase()
+  const okType =
+    type.startsWith('image/') ||
+    name.endsWith('.png') ||
+    name.endsWith('.jpg') ||
+    name.endsWith('.jpeg') ||
+    name.endsWith('.webp') ||
+    name.endsWith('.svg')
+  if (!okType) return 'bad_type'
+  return null
+}
+
+export async function persistSiteLogo(file: File): Promise<SystemSettings> {
+  const next = applyCatalog(await uploadSiteLogo(file))
+  hydrated = true
+  hydratePromise = Promise.resolve(next)
+  return next
+}
+
+export async function clearSiteLogo(): Promise<SystemSettings> {
+  const next = applyCatalog(await deleteSiteLogo())
   hydrated = true
   hydratePromise = Promise.resolve(next)
   return next

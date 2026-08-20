@@ -74,6 +74,27 @@ function Wait-Docker([int]$Seconds = 240) {
     return $false
 }
 
+function Stop-NativeBackend {
+    if (Test-Path $PidFile) {
+        $oldPid = (Get-Content $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()
+        if ($oldPid -and (Get-Process -Id $oldPid -ErrorAction SilentlyContinue)) {
+            Stop-Process -Id $oldPid -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item $PidFile -Force -ErrorAction SilentlyContinue
+    }
+    Get-CimInstance Win32_Process -Filter "Name = 'python.exe' OR Name = 'pythonw.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -match 'uvicorn app\.main:app' } |
+        ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    Start-Sleep -Seconds 1
+}
+
+if ($env:CMS_RESTART_BACKEND -eq "1") {
+    Write-Auto "restart native backend :$Port"
+    Stop-NativeBackend
+}
+
 if (-not (Test-BackendOk)) {
     Write-Auto "starting native backend :$Port"
     Set-Location $Backend
@@ -135,16 +156,35 @@ if (-not (Test-BackendOk)) {
 }
 
 Set-Location $Root
-if (Wait-Docker 240) {
-    Write-Auto "docker ready — USB-host UI"
+$dockerWait = 240
+if ($env:CMS_DOCKER_WAIT_SEC -ne $null -and $env:CMS_DOCKER_WAIT_SEC -ne "") {
+    try { $dockerWait = [int]$env:CMS_DOCKER_WAIT_SEC } catch { $dockerWait = 240 }
+}
+if ($dockerWait -le 0) {
+    Write-Auto "skip Docker wait"
+} elseif (Wait-Docker $dockerWait) {
+    Write-Auto "docker ready - USB-host UI"
     docker stop jablotron-cms-backend 2>$null | Out-Null
     docker rm jablotron-cms-backend 2>$null | Out-Null
     docker compose -f docker-compose.yml stop backend 2>$null | Out-Null
     docker compose -f docker-compose.all-in-docker.yml stop 2>$null | Out-Null
-    docker compose -f docker-compose.usb-host.yml up -d --force-recreate --remove-orphans
+    $composeArgs = @(
+        "compose", "-f", "docker-compose.usb-host.yml",
+        "up", "-d", "--force-recreate", "--remove-orphans"
+    )
+    if ($env:CMS_DOCKER_BUILD -eq "1") {
+        $buildArgs = @(
+            "compose", "-f", "docker-compose.usb-host.yml", "build"
+        )
+        if ($env:CMS_DOCKER_NO_CACHE -eq "1") { $buildArgs += "--no-cache" }
+        $buildArgs += "frontend"
+        docker @buildArgs
+    }
+    docker @composeArgs
     Write-Auto "compose usb-host done"
 } else {
-    Write-Auto "Docker Desktop not ready — backend USB still running"
+    Write-Auto "Docker Desktop not ready - backend USB still running"
 }
 
 Write-Auto "done UI http://127.0.0.1:$UiPort API http://127.0.0.1:$Port/api/health"
+Write-Auto "desktop SPA http://127.0.0.1:$Port/  (.\scripts\start-cms-desktop.ps1)"

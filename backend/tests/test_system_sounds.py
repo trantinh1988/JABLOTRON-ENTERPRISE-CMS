@@ -12,8 +12,10 @@ WAV = b"RIFF" + (36).to_bytes(4, "little") + b"WAVE" + b"\x00" * 32
 @pytest.fixture(autouse=True)
 def _tmp_dir(tmp_path: Path):
     store.set_alert_sounds_dir(tmp_path)
+    store.set_brand_dir(tmp_path / "brand")
     yield
     store.set_alert_sounds_dir(None)
+    store.set_brand_dir(None)
 
 
 def test_save_and_list_wav():
@@ -73,3 +75,25 @@ def test_patch_site_title():
     assert got["site_title"] == "Coopmart 230 Nguyễn Trãi"
     store.patch_system_settings(site_title="")
     assert store.get_system_settings()["site_title"] == ""
+
+
+PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
+
+
+def test_save_and_delete_logo():
+    state = store.save_site_logo("mark.png", "image/png", PNG)
+    slot = state["site_logo"]
+    assert slot is not None
+    assert slot["name"] == "mark.png"
+    assert slot["url"].startswith("/media/brand/logo_")
+    assert slot["url"].endswith(".png")
+    disk = tmp_file(slot["url"], store.ensure_brand_dir())
+    assert disk.is_file()
+    cleared = store.delete_site_logo()
+    assert cleared["site_logo"] is None
+    assert not disk.exists()
+
+
+def test_logo_rejects_wrong_type():
+    with pytest.raises(ValueError, match="bad_type"):
+        store.save_site_logo("notes.txt", "text/plain", b"hello world")

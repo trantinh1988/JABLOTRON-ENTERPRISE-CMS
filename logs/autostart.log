@@ -22,3 +22,77 @@
 2026-08-19 12:12:33 docker ready â€
 2026-08-19 12:12:33 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
 08/19/2026 12:12:33.55 startup-cmd end
+2026-08-20 08:13:01 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-20 08:13:03 starting native backend :8010
+2026-08-20 08:13:03 uvicorn pid=14064
+2026-08-20 08:13:05 backend health ok
+2026-08-20 08:13:06 docker ready â€
+2026-08-20 08:13:06 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+08/20/2026  8:13:07.06 startup-cmd begin
+2026-08-20 08:13:09 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-20 08:13:09 autostart delay 20s (user profile / Docker Desktop)
+2026-08-20 08:13:29 backend already running :8010
+2026-08-20 08:13:29 docker ready â€
+2026-08-20 08:13:29 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+2026-08-20 08:13:52 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-20 08:13:52 autostart delay 20s (user profile / Docker Desktop)
+2026-08-20 08:14:12 backend already running :8010
+2026-08-20 08:14:12 docker ready â€
+2026-08-20 08:14:12 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+08/20/2026  8:14:13.00 startup-cmd end
+2026-08-20 10:26:08 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-20 10:26:08 backend already running :8010
+2026-08-20 10:26:08 docker ready â€
+2026-08-20 10:26:08 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+2026-08-20 10:26:08 desktop SPA http://127.0.0.1:8010/  (.\scripts\start-cms-desktop.ps1)
+2026-08-20 10:26:37 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-20 10:26:37 backend already running :8010
+2026-08-20 10:26:37 docker ready â€
+2026-08-20 10:26:37 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+2026-08-20 10:26:37 desktop SPA http://127.0.0.1:8010/  (.\scripts\start-cms-desktop.ps1)
+2026-08-20 10:27:42 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-20 10:27:42 backend already running :8010
+2026-08-20 10:27:43 docker ready â€
+2026-08-20 10:27:43 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+2026-08-20 10:27:43 desktop SPA http://127.0.0.1:8010/  (.\scripts\start-cms-desktop.ps1)
+2026-08-20 10:30:25 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-20 10:30:25 backend already running :8010
+2026-08-20 10:30:25 docker ready â€
+2026-08-20 10:30:25 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+2026-08-20 10:30:25 desktop SPA http://127.0.0.1:8010/  (.\scripts\start-cms-desktop.ps1)
+2026-08-20 10:32:06 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-20 10:32:06 backend already running :8010
+2026-08-20 10:32:06 docker ready â€
+2026-08-20 10:32:06 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+2026-08-20 10:32:06 desktop SPA http://127.0.0.1:8010/  (.\scripts\start-cms-desktop.ps1)
+2026-08-20 11:06:11 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-20 11:06:11 backend already running :8010
+2026-08-20 11:06:11 docker ready â€
+2026-08-20 11:06:11 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+2026-08-20 11:06:11 desktop SPA http://127.0.0.1:8010/  (.\scripts\start-cms-desktop.ps1)
+2026-08-20 11:11:24 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-20 11:11:24 restart native backend :8010
+2026-08-20 11:11:27 starting native backend :8010
+2026-08-20 11:11:27 uvicorn pid=26512
+2026-08-20 11:11:28 backend health ok
+2026-08-20 11:11:28 docker ready â€
+2026-08-20 11:11:28 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+2026-08-20 11:11:28 desktop SPA http://127.0.0.1:8010/  (.\scripts\start-cms-desktop.ps1)
+2026-08-20 11:20:45 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-20 11:20:45 restart native backend :8010
+2026-08-20 11:20:48 starting native backend :8010
+2026-08-20 11:20:49 uvicorn pid=11700
+2026-08-20 11:20:50 backend health ok
+2026-08-20 11:20:50 docker ready - USB-host UI
+2026-08-20 11:20:59 compose usb-host done
+2026-08-20 11:20:59 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+2026-08-20 11:20:59 desktop SPA http://127.0.0.1:8010/  (.\scripts\start-cms-desktop.ps1)
+2026-08-20 11:30:45 start-cms-windows begin root=E:\JABLOTRON-ENTERPRISE-CMS
+2026-08-20 11:30:45 restart native backend :8010
+2026-08-20 11:30:48 starting native backend :8010
+2026-08-20 11:30:48 uvicorn pid=36924
+2026-08-20 11:30:50 backend health ok
+2026-08-20 11:30:50 docker ready - USB-host UI
+2026-08-20 11:30:59 compose usb-host done
+2026-08-20 11:30:59 done UI http://127.0.0.1:8080 API http://127.0.0.1:8010/api/health
+2026-08-20 11:30:59 desktop SPA http://127.0.0.1:8010/  (.\scripts\start-cms-desktop.ps1)

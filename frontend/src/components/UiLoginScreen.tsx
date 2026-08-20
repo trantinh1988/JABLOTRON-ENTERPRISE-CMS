@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { vi } from '../i18n/vi'
 import { useOperatorSession } from '../hooks/useOperatorSession'
+import { parsePinInput, sanitizePinInput } from '../lib/pinAuth'
 import { BrandMark } from './BrandMark'
 import { Btn } from './ui'
 
@@ -42,15 +43,14 @@ export function UiLoginScreen() {
             <input
               ref={inputRef}
               type="password"
-              inputMode="numeric"
+              inputMode="text"
               autoComplete="off"
-              pattern="[0-9]*"
-              maxLength={10}
+              maxLength={13}
               value={pin}
               disabled={loading}
               aria-invalid={Boolean(error)}
               onChange={(e) => {
-                setPin(e.target.value.replace(/\D/g, '').slice(0, 10))
+                setPin(sanitizePinInput(e.target.value))
                 if (error) setError(null)
               }}
               className={`w-full rounded-md border bg-mist px-3 py-2 font-mono text-sm tracking-[0.25em] text-ink outline-none focus:ring-1 ${
@@ -88,7 +88,7 @@ export function UiLoginScreen() {
                 {vi.loginEnterSetup}
               </Btn>
             )}
-            <Btn type="submit" disabled={loading || pin.length < 4}>
+            <Btn type="submit" disabled={loading || !parsePinInput(pin)}>
               {vi.loginSubmit}
             </Btn>
           </div>

@@ -1,13 +1,22 @@
-INFO:     Started server process [25864]
+INFO:     SPA routes attached (dist=E:\JABLOTRON-ENTERPRISE-CMS\frontend\dist)
+INFO:     Started server process [17032]
 INFO:     Waiting for application startup.
 INFO:     USB manager started (mock=False). Quét n\u1ec1n m\u1ed7i 2.0s — xem /api/usb/status
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8010 (Press CTRL+C to quit)
-INFO:     127.0.0.1:52467 - "WebSocket /ws/events" [accepted]
+INFO:     127.0.0.1:63282 - "WebSocket /ws/events" [accepted]
 INFO:     connection open
-INFO:     127.0.0.1:50651 - "WebSocket /ws/events" [accepted]
+INFO:     127.0.0.1:63283 - "WebSocket /ws/events" [accepted]
 INFO:     connection open
-INFO:     127.0.0.1:61293 - "WebSocket /ws/events" [accepted]
+INFO:     127.0.0.1:61847 - "WebSocket /ws/events" [accepted]
 INFO:     connection open
-INFO:     127.0.0.1:64746 - "WebSocket /ws/events" [accepted]
+INFO:     127.0.0.1:57484 - "WebSocket /ws/events" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:61918 - "WebSocket /ws/events" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:56013 - "WebSocket /ws/events" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:57443 - "WebSocket /ws/events" [accepted]
+INFO:     connection open
+INFO:     127.0.0.1:58765 - "WebSocket /ws/events" [accepted]
 INFO:     connection open

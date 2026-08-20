@@ -3,7 +3,7 @@
 #   - Frontend trong Docker (port 8080) — proxy toi host.docker.internal:8010
 #
 # Docker Desktop KHONG passthrough USB HID vao container Windows.
-# Kien truc nay giong Linux (deploy-usb-linux.sh): host backend + Docker UI.
+# Backend native tren host + UI trong Docker.
 #
 # Chay: .\scripts\deploy-usb-windows.ps1
 # Yeu cau: Docker Desktop dang chay, Python 3, keys/public_key.pem
@@ -35,7 +35,6 @@ if (Test-Path $nginxRuntime -PathType Container) {
     Remove-Item $nginxRuntime -Recurse -Force
 }
 # Luôn ghi lại nginx Windows (listen 80 + host.docker.internal).
-# Container Linux từng ghi đè file này thành hostnet → UI/stream USB gãy.
 Copy-Item (Join-Path $Root "frontend\nginx.host-backend.conf") $nginxRuntime -Force
 $ensurePy = Join-Path $Backend ".venv\Scripts\python.exe"
 if (Test-Path $ensurePy) {
@@ -170,6 +169,7 @@ Write-Host ""
 Write-Host "Xong."
 Write-Host ("  UI:      http://127.0.0.1:{0}" -f $UiPort)
 Write-Host ("  API:     http://127.0.0.1:{0}/api/usb/status" -f $Port)
+Write-Host ("  App:     .\\scripts\\start-cms-desktop.ps1  (khong bat buoc Docker)")
 Write-Host ("  Log:     Get-Content {0} -Wait -Tail 50" -f $logFile)
 Write-Host "  Dung:    .\scripts\stop-cms.ps1"
 Write-Host "  Autostart: bat «Khoi dong cung may» tren trang He thong"

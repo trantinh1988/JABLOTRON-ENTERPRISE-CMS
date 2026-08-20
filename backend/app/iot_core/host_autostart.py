@@ -1,7 +1,8 @@
-"""Khởi động CMS cùng Windows (thư mục Startup) hoặc Linux (systemd --user).
+"""Khởi động CMS cùng Windows (thư mục Startup).
 
 Task Scheduler ONLOGON thường bị Access is denied nếu CMS không chạy Admin.
 Thư mục Startup của user không cần Admin — phù hợp máy trạm vận hành.
+CMS chỉ hỗ trợ Windows (backend native + Docker UI).
 """
 
 from __future__ import annotations
@@ -17,7 +18,6 @@ from app.core.config import REPO_ROOT
 WINDOWS_TASK = "JablotronCMS"
 WINDOWS_STARTUP_NAME = "JablotronCMS.cmd"
 WINDOWS_STARTUP_VBS = "JablotronCMS.vbs"
-LINUX_UNIT = "jablotron-cms.service"
 
 
 def current_os() -> str:
@@ -29,13 +29,7 @@ def current_os() -> str:
 
 
 def start_script() -> Path:
-    if current_os() == "windows":
-        return REPO_ROOT / "scripts" / "start-cms-windows.ps1"
-    return REPO_ROOT / "scripts" / "start-cms-linux.sh"
-
-
-def linux_unit_path() -> Path:
-    return Path.home() / ".config" / "systemd" / "user" / LINUX_UNIT
+    return REPO_ROOT / "scripts" / "start-cms-windows.ps1"
 
 
 def windows_startup_dir() -> Path:
@@ -68,14 +62,6 @@ def _docker_ok() -> bool | None:
     # Do not run `docker info` on the HTTP request path: on Windows it can hang
     # the asyncio loop and nginx then returns 502 for every /api and /ws call.
     return None
-
-
-def _windows_task_command() -> str:
-    script = start_script()
-    return (
-        "powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass "
-        f'-File "{script}"'
-    )
 
 
 def _windows_startup_cmd_text() -> str:
@@ -116,45 +102,15 @@ def _windows_enabled() -> bool:
     return proc.returncode == 0
 
 
-def _linux_enabled() -> bool:
-    try:
-        proc = _run(["systemctl", "--user", "is-enabled", LINUX_UNIT], timeout=8)
-    except (OSError, subprocess.TimeoutExpired):
-        return linux_unit_path().is_file()
-    return proc.returncode == 0
-
-
-def _linux_unit_text() -> str:
-    script = start_script().as_posix()
-    return (
-        "[Unit]\n"
-        "Description=Jablotron CMS (USB host backend + Docker UI)\n"
-        "After=default.target\n"
-        "\n"
-        "[Service]\n"
-        "Type=oneshot\n"
-        "RemainAfterExit=yes\n"
-        "TimeoutStartSec=180\n"
-        f"ExecStart=/bin/bash {script}\n"
-        "\n"
-        "[Install]\n"
-        "WantedBy=default.target\n"
-    )
-
-
 def get_host_status(*, detail: str | None = None, ok: bool = True) -> dict[str, Any]:
     os_name = current_os()
-    supported = os_name in ("windows", "linux")
-    enabled = False
-    if os_name == "windows":
-        enabled = _windows_enabled()
-    elif os_name == "linux":
-        enabled = _linux_enabled()
+    supported = os_name == "windows"
+    enabled = _windows_enabled() if supported else False
     label = {
         "windows": "Khởi động cùng Windows (khi đăng nhập)",
-        "linux": "Khởi động cùng phiên Linux (systemd --user)",
+        "linux": "CMS chỉ vận hành trên Windows",
         "other": "Hệ điều hành này chưa hỗ trợ autostart",
-    }[os_name]
+    }.get(os_name, "Hệ điều hành này chưa hỗ trợ autostart")
     return {
         "ok": ok,
         "os": os_name,
@@ -168,11 +124,8 @@ def get_host_status(*, detail: str | None = None, ok: bool = True) -> dict[str, 
 
 
 def set_autostart(enabled: bool) -> dict[str, Any]:
-    os_name = current_os()
-    if os_name == "windows":
+    if current_os() == "windows":
         return _set_windows(enabled)
-    if os_name == "linux":
-        return _set_linux(enabled)
     return get_host_status(ok=False, detail="autostart_unsupported")
 
 
@@ -236,31 +189,4 @@ def _set_windows(enabled: bool) -> dict[str, Any]:
     except OSError as exc:
         return get_host_status(ok=False, detail=str(exc)[:400])
     _try_register_logon_task(False)
-    return get_host_status()
-
-
-def _set_linux(enabled: bool) -> dict[str, Any]:
-    script = start_script()
-    unit = linux_unit_path()
-    if enabled:
-        if not script.is_file():
-            return get_host_status(ok=False, detail="missing_start_script")
-        unit.parent.mkdir(parents=True, exist_ok=True)
-        unit.write_text(_linux_unit_text(), encoding="utf-8")
-        reload_proc = _run(["systemctl", "--user", "daemon-reload"], timeout=15)
-        if reload_proc.returncode != 0:
-            err = (reload_proc.stderr or reload_proc.stdout or "daemon_reload_failed").strip()[:400]
-            return get_host_status(ok=False, detail=err)
-        proc = _run(["systemctl", "--user", "enable", LINUX_UNIT], timeout=15)
-        if proc.returncode != 0:
-            err = (proc.stderr or proc.stdout or "systemctl_enable_failed").strip()[:400]
-            return get_host_status(ok=False, detail=err)
-        return get_host_status()
-
-    _run(["systemctl", "--user", "disable", LINUX_UNIT], timeout=15)
-    try:
-        unit.unlink(missing_ok=True)
-    except OSError as exc:
-        return get_host_status(ok=False, detail=str(exc)[:400])
-    _run(["systemctl", "--user", "daemon-reload"], timeout=15)
     return get_host_status()

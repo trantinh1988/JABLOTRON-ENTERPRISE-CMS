@@ -1,17 +1,12 @@
 # UI trong Docker, backend native trên máy chủ (USB HID).
-# Docker không passthrough USB HID ổn định — backend chạy trên host, UI trong Docker.
+# Docker Desktop không passthrough USB HID — backend chạy trên host Windows, UI trong Docker.
 #
 # Một lệnh (khuyến nghị):
-#   Linux:   ./scripts/deploy-usb-linux.sh
-#   Windows: .\scripts\deploy-usb-windows.ps1
+#   .\scripts\deploy-usb-windows.ps1
 #
 # Thủ công:
-#   Linux:
-#     Terminal 1: ./scripts/start-backend-usb.sh          # :8010
-#     Terminal 2: docker compose -f docker-compose.usb-host.linux.yml up -d --build
-#   Windows:
-#     Terminal 1: .\scripts\start-backend-usb.ps1         # :8010
-#     Terminal 2: docker compose -f docker-compose.usb-host.yml up -d --build
+#   Terminal 1: .\scripts\start-backend-usb.ps1         # :8010
+#   Terminal 2: docker compose -f docker-compose.usb-host.yml up -d --build
 #
 # UI: http://127.0.0.1:8080  |  API: http://127.0.0.1:8010
 

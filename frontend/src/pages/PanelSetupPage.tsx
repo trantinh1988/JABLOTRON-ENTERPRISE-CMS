@@ -56,6 +56,7 @@ import {
 } from '../i18n/vi'
 import { applyDeviceEvent, isDeviceStateEvent } from '../hooks/deviceEventSync'
 import { latestEventSeq, takeEventsSince } from '../hooks/useEventStream'
+import { flinkUserNum } from '../lib/pinAuth'
 
 const TABS = ['overview', 'zones', 'users', 'inputs', 'pg', 'connection'] as const
 type Tab = (typeof TABS)[number]
@@ -858,7 +859,7 @@ function UsersTab({
           onClick={() => {
             setCreating(true)
             setEditing(null)
-            setPerms([])
+            setPerms(['arm', 'disarm'])
           }}
         >
           <Plus className="size-3.5" /> {vi.addUser}
@@ -880,7 +881,12 @@ function UsersTab({
                 <input name="name" className={inputClass} defaultValue={editing?.name ?? ''} required />
               </Field>
               <Field label={vi.codeLabel}>
-                <input name="code_label" className={inputClass} defaultValue={editing?.code_label ?? ''} />
+                <input
+                  name="code_label"
+                  className={inputClass}
+                  defaultValue={editing?.code_label ?? ''}
+                  placeholder={vi.codeLabelPlaceholder}
+                />
               </Field>
             </div>
             <Field label={vi.permissions}>
@@ -918,6 +924,7 @@ function UsersTab({
         <table className="w-full text-left text-sm">
           <thead className="border-b border-line bg-mist/50 text-[11px] text-steel/70">
             <tr>
+              <th className="px-4 py-2">{vi.userSlot}</th>
               <th className="px-4 py-2">{vi.userName}</th>
               <th className="px-4 py-2">{vi.codeLabel}</th>
               <th className="px-4 py-2">{vi.permissions}</th>
@@ -927,6 +934,9 @@ function UsersTab({
           <tbody>
             {users.map((u) => (
               <tr key={u.user_id} className="border-b border-line/60">
+                <td className="px-4 py-2 font-mono text-xs text-steel/70">
+                  {flinkUserNum(u.user_id) ?? '—'}
+                </td>
                 <td className="px-4 py-2">{u.name}</td>
                 <td className="px-4 py-2 font-mono text-xs">{u.code_label || '—'}</td>
                 <td className="px-4 py-2 text-xs">

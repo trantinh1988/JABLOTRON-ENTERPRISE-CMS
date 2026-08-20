@@ -8,7 +8,6 @@ docker stop jablotron-cms-backend jablotron-cms-frontend 2>$null | Out-Null
 docker compose -f (Join-Path $Root "docker-compose.yml") down --remove-orphans 2>$null | Out-Null
 docker compose -f (Join-Path $Root "docker-compose.all-in-docker.yml") down --remove-orphans 2>$null | Out-Null
 docker compose -f (Join-Path $Root "docker-compose.usb-host.yml") down --remove-orphans 2>$null | Out-Null
-docker compose -f (Join-Path $Root "docker-compose.usb-host.linux.yml") down --remove-orphans 2>$null | Out-Null
 
 if (Test-Path $PidFile) {
     $oldPid = (Get-Content $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1).Trim()

@@ -1,8 +1,9 @@
 import type { PanelUser } from '../api/client'
 import { vi } from '../i18n/vi'
-import { pinUsersOf, userIsAdmin, usersMatchingPin } from './pinAuth'
+import { pinUsersOf, parsePinInput, userIsAdmin, usersMatchingPin } from './pinAuth'
 
 const STORAGE_KEY = 'cms.operator.session.v1'
+const LOCK_KEY = 'cms.operator.locked.v1'
 
 export type OperatorMatch = {
   userId: string
@@ -42,7 +43,7 @@ export function sessionFromPin(
   users: PanelUser[],
   pin: string,
 ): OperatorSession | { error: string } {
-  if (!/^\d{4,10}$/.test(pin)) return { error: vi.keypadPinInvalid }
+  if (!parsePinInput(pin)) return { error: vi.keypadPinInvalid }
   const hits = usersMatchingPin(users, pin)
   if (!hits.length) return { error: vi.keypadWrongCode }
   const adminHit = hits.find((u) => userIsAdmin(u))
@@ -107,12 +108,40 @@ export function writeStoredSession(session: OperatorSession | null): void {
   try {
     if (!session) {
       sessionStorage.removeItem(STORAGE_KEY)
+      sessionStorage.removeItem(LOCK_KEY)
       return
     }
     sessionStorage.setItem(STORAGE_KEY, JSON.stringify(session))
   } catch {
     /* private mode / quota */
   }
+}
+
+export function readScreenLocked(): boolean {
+  try {
+    return sessionStorage.getItem(LOCK_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function writeScreenLocked(locked: boolean): void {
+  try {
+    if (locked) sessionStorage.setItem(LOCK_KEY, '1')
+    else sessionStorage.removeItem(LOCK_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+
+export function sessionPinMatches(session: OperatorSession, typed: string): boolean {
+  if (session.setup) return false
+  const stored = parsePinInput(session.pin)
+  const input = parsePinInput(typed)
+  if (!stored || !input) return false
+  if (stored.pin !== input.pin) return false
+  if (stored.userNum != null && input.userNum != null) return stored.userNum === input.userNum
+  return true
 }
 
 /** Drop a restored session that no longer matches declared users. */

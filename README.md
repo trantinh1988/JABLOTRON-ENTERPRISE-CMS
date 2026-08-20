@@ -1,6 +1,8 @@
 # Jablotron Enterprise CMS
 
-Offline-capable alarm CMS with direct USB multi-panel control and RSA license gating.
+Offline-capable alarm CMS for **Windows** with direct USB multi-panel control and RSA license gating.
+
+Supported workstation: **Windows** (backend native + Docker UI). Linux is not supported.
 
 ## Structure
 
@@ -71,29 +73,24 @@ Default USB mode is **real HID** (`CMS_USB_MOCK_MODE=false`, VID `16D6` / PID `0
 
 For **demo without hardware**, set `CMS_USB_MOCK_MODE=true` in `.env` or `docker-compose.yml`.
 
-### USB thật — Linux & Windows (Docker UI)
+### USB thật — Windows (Docker UI)
 
-Docker **không** passthrough USB HID ổn định (đặc biệt Windows / Docker Desktop). Kiến trúc dùng chung cả hai nền tảng:
+CMS chỉ vận hành trên **Windows**. Docker Desktop **không** passthrough USB HID, nên:
 
-- **Backend native trên host** (`:8010`) — truy cập HID qua `hidapi`
-- **UI trong Docker** (`:8080`) — nginx proxy tới backend host
+- **Backend native trên host** (`:8010`) — HID qua `hidapi`
+- **UI trong Docker** (`:8080`) — nginx proxy tới `host.docker.internal:8010`
 
-```bash
-# Linux
-sudo bash scripts/setup-deps-linux.sh   # lần đầu
-sudo bash scripts/setup-usb-linux.sh    # udev
-./scripts/deploy-usb-linux.sh
-
-# Windows (PowerShell, Docker Desktop đang chạy)
+```powershell
+# PowerShell, Docker Desktop đang chạy
 .\scripts\deploy-usb-windows.ps1
 ```
 
-| | Linux | Windows |
-|--|-------|---------|
-| Deploy | `./scripts/deploy-usb-linux.sh` | `.\scripts\deploy-usb-windows.ps1` |
-| Check | `./scripts/check-usb-linux.sh` | `.\scripts\check-usb-windows.ps1` |
-| Stop | `./scripts/stop-cms.sh` | `.\scripts\stop-cms.ps1` |
-| UI compose | `docker-compose.usb-host.linux.yml` | `docker-compose.usb-host.yml` |
+| | Windows |
+|--|---------|
+| Deploy | `.\scripts\deploy-usb-windows.ps1` |
+| Check | `.\scripts\check-usb-windows.ps1` |
+| Stop | `.\scripts\stop-cms.ps1` |
+| UI compose | `docker-compose.usb-host.yml` |
 
 - **UI:** http://127.0.0.1:8080  
 - **API:** http://127.0.0.1:8010/api/usb/status  
@@ -112,16 +109,14 @@ UI: http://127.0.0.1:5173 — Vite proxies `/api` and `/ws` to backend `:8000`.
 
 ## Docker (UI + Backend, mock / không USB)
 
-Yêu cầu: đã có `keys/public_key.pem` (chạy `python admin_tool_keygen.py gen-keys`).
+Yêu cầu: đã có `keys/public_key.pem` (chạy `python admin_tool_keygen.py gen-keys`). Windows + Docker Desktop:
 
-Windows (Docker Desktop) và Linux (VPS) dùng **cùng một file**:
-
-```bash
+```powershell
 docker compose -f docker-compose.all-in-docker.yml up -d --build
 ```
 
 - **UI:** http://127.0.0.1:8080
 - Backend trong mạng Docker (`backend:8000`), mock USB
-- Máy USB thật: dùng `deploy-usb-windows.ps1` / `deploy-usb-linux.sh` (không dùng file này)
+- Máy USB thật: dùng `.\scripts\deploy-usb-windows.ps1` (không dùng file này)
 
-Tắt stack: `docker compose -f docker-compose.all-in-docker.yml down` (hoặc `.\scripts\stop-cms.ps1` / `./scripts/stop-cms.sh`)
+Tắt stack: `docker compose -f docker-compose.all-in-docker.yml down` (hoặc `.\scripts\stop-cms.ps1`)

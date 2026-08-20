@@ -41,7 +41,7 @@ type Props = {
   onTrailSnap?: (blob: Blob) => void | Promise<void>
   onTrailSnapError?: (message: string) => void
   alarmFocus: boolean
-  onAssign: (mapId: number | null) => void
+  onAssign?: (mapId: number | null) => void
   onSelectDevice: (globalId: string | null) => void
   onExpand: () => void
 }
@@ -106,6 +106,8 @@ export const MapTile = memo(function MapTile({
         className="flex shrink-0 items-center gap-1 border-b border-line/70 bg-panel/70 px-1.5 py-1"
       >
         <div ref={menuRef} className="relative min-w-0 flex-1">
+          {onAssign ? (
+            <>
           <button
             type="button"
             className="flex w-full min-w-0 items-center gap-1 rounded px-1 py-0.5 text-left text-[11px] font-semibold text-ink hover:bg-mist/80"
@@ -154,6 +156,13 @@ export const MapTile = memo(function MapTile({
                   <span className="shrink-0 font-mono text-[10px] text-steel/50">{m.device_count}</span>
                 </button>
               ))}
+            </div>
+          )}
+            </>
+          ) : (
+            <div className="flex w-full min-w-0 items-center gap-1 px-1 py-0.5 text-[11px] font-semibold text-ink">
+              <MapIcon className="size-3 shrink-0 text-steel/70" />
+              <span className="min-w-0 flex-1 truncate">{map?.name ?? vi.mapGridSlotEmpty}</span>
             </div>
           )}
         </div>

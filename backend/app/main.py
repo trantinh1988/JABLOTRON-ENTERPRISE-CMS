@@ -21,6 +21,7 @@ from app.db.session import init_db
 from app.iot_core.event_store import register_event_persistence, trim_history_events
 from app.iot_core.panel_bus import get_panel_bus
 from app.iot_core.panel_store import load_panels_into_bus
+from app.iot_core.spa_static import mount_spa
 from app.iot_core.usb_manager import get_usb_manager
 from app.license_manager.service import get_license_service
 from app.schemas.common import HealthOut
@@ -142,6 +143,14 @@ def create_app() -> FastAPI:
         StaticFiles(directory=str(alert_sound_dir)),
         name="alert_sounds",
     )
+    brand_dir = system.brand_dir()
+    app.mount(
+        "/media/brand",
+        StaticFiles(directory=str(brand_dir)),
+        name="brand",
+    )
+    # Last: optional workstation UI. Skipped when frontend/dist is absent (Docker UI).
+    mount_spa(app)
     return app
 
 

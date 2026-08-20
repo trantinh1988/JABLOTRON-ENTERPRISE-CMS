@@ -21,6 +21,8 @@ import {
 import { reactionAlarmsWhenDisarmed } from '../lib/deviceReaction'
 import { sessionMatchOnPanel } from '../lib/operatorSession'
 import {
+  panelAuthCode,
+  panelAuthUserNum,
   panelControllable,
   pinCommandErrorMessage,
   pinUsersOf,
@@ -174,13 +176,20 @@ export function usePanelKeypad({
         setError(formatCommandError(raw))
       }
 
+      const wire = panelAuthCode(resolved.user, pin)
+      const userNum = panelAuthUserNum(resolved.user, pin)
+
       try {
         if (!silence && panelControllable(panel, mockMode)) {
           const result = await groupAction(
             [panel.panel_id],
             action === 'arm' ? 'arm' : 'disarm',
             `${resolved.user.name} · ${zone.name}`,
-            { code: pin, section_num: zone.section_num },
+            {
+              code: wire,
+              section_num: zone.section_num,
+              user_num: userNum,
+            },
           )
           const failed = result.results.filter((r) => !r.ok)
           if (failed.length) {
@@ -205,7 +214,7 @@ export function usePanelKeypad({
         const zoneQueued = queuedAlarmIdsInZone(devices, zoneId)
         if (silence) {
           if (silenceIds.length) {
-            const ack = await ackAlwaysAlarms(panel.panel_id, silenceIds, pin)
+            const ack = await ackAlwaysAlarms(panel.panel_id, silenceIds, wire)
             setMessage(
               `${vi.ackAlwaysAlarmOk(ack.silenced?.length ?? silenceIds.length)} · ${zone.name}`,
             )
@@ -221,7 +230,7 @@ export function usePanelKeypad({
           )
         } else {
           if (action === 'disarm' && silenceIds.length) {
-            await ackAlwaysAlarms(panel.panel_id, silenceIds, pin)
+            await ackAlwaysAlarms(panel.panel_id, silenceIds, wire)
           }
           if (action === 'disarm') {
             releaseAlarmMapFocus([...new Set([...silenceIds, ...zoneQueued])])

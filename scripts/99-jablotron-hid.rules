@@ -1,5 +1,0 @@
-# Jablotron JA-100 / Link USB — quyền đọc HID cho user và Docker
-# Cài: sudo ./scripts/setup-usb-linux.sh
-
-SUBSYSTEM=="usb", ATTR{idVendor}=="16d6", ATTR{idProduct}=="0008", MODE="0666", GROUP="plugdev"
-KERNEL=="hidraw*", ATTRS{idVendor}=="16d6", ATTRS{idProduct}=="0008", MODE="0666", GROUP="plugdev"

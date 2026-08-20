@@ -33,6 +33,7 @@ from app.iot_core.event_hub import EventHub, get_event_hub
 from app.iot_core.jablotron_protocol import (
     PROBLEM_DEVICE_STATES,
     ParsedUpdates,
+    authorisation_code_candidates,
     build_arm_sequence,
     build_device_stream_keepalive,
     build_get_device_status_packet,
@@ -288,9 +289,8 @@ class UsbDeviceManager:
         if os.path.exists("/.dockerenv"):
             return (
                 "Backend đang chạy trong Docker — không thấy USB. "
-                "Linux: bash scripts/stop-cms.sh && bash scripts/deploy-usb-linux.sh "
-                "(backend native port 8010, không dùng docker compose up). "
-                "Windows: .\\scripts\\stop-cms.ps1 && .\\scripts\\deploy-usb-windows.ps1"
+                "Windows: .\\scripts\\stop-cms.ps1 && .\\scripts\\deploy-usb-windows.ps1 "
+                "(backend native port 8010, UI Docker :8080)."
             )
         return (
             "Không phát hiện Jablotron Link (VID 16D6 / PID 0008). "
@@ -335,6 +335,7 @@ class UsbDeviceManager:
         *,
         code: str | None = None,
         section_num: int | None = None,
+        user_num: int | None = None,
     ) -> tuple[bool, str]:
         panel = self.panel_bus.panels.get(panel_id)
         if panel is None:
@@ -362,19 +363,16 @@ class UsbDeviceManager:
         else:
             sections = [1]
 
-        try:
-            packets = build_arm_sequence(action, pin, sections)
-        except ValueError as exc:
-            return False, str(exc) or "invalid_pin_code"
-
-        async with session.lock:
-            ok, detail = await self._hid_call(self._send_arm_packets, session, packets)
+        ok, detail, working = await self._send_arm_with_candidates(
+            session, action, pin, sections, user_num=user_num
+        )
         if ok:
-            # Stream activation is slow (HID + poll). Do not block arm/disarm ACK —
-            # UI and zone_armed events should return as soon as packets are accepted.
-            pin_for_stream = pin
+            # Keep Admin/Service stream_code. A regular F-Link user PIN must not
+            # overwrite it or 0x55/0xd8 dies after Tinh arms/disarms.
+            stored_stream = (getattr(panel, "stream_code", "") or "").strip()
+            pin_for_stream = stored_stream or working
             asyncio.create_task(
-                self.activate_device_stream(panel_id, pin_for_stream, persist=True),
+                self.activate_device_stream(panel_id, pin_for_stream, persist=False),
                 name=f"device-stream:{panel_id}",
             )
             # Optimistic zone/panel disarm in PanelBus races ahead of HID section
@@ -451,7 +449,7 @@ class UsbDeviceManager:
                 pass
         pin = (code or "").strip()
         if pin and to_apply and not self.settings.usb_mock_mode:
-            await self._send_physical_alarm_ack(panel_id, pin, section_nums)
+            await self._send_physical_alarm_ack(panel_id, pin, section_nums, user_num=None)
         if to_apply:
             self._save_acked_always()
             await self._apply_device_states(
@@ -472,18 +470,44 @@ class UsbDeviceManager:
         panel_id: str,
         code: str,
         section_nums: set[int],
+        *,
+        user_num: int | None = None,
     ) -> None:
         """PIN UI → tủ: authorize + unset lại phân khu (xóa còi / alarm memory)."""
         session = self._sessions.get(panel_id)
         if session is None or hid is None:
             return
         sections = sorted(section_nums) or [1]
-        try:
-            packets = build_arm_sequence("disarm", code, sections)
-        except ValueError:
-            return
+        await self._send_arm_with_candidates(
+            session, "disarm", code, sections, user_num=user_num
+        )
+
+    async def _send_arm_with_candidates(
+        self,
+        session: _HidSession,
+        action: str,
+        code: str,
+        sections: list[int],
+        *,
+        user_num: int | None = None,
+    ) -> tuple[bool, str, str]:
+        """Try F-Link prefix and PIN-only packing. Returns (ok, detail, working_code)."""
+        ok = False
+        detail = "wrong_pin_code"
+        working = (code or "").strip()
         async with session.lock:
-            await self._hid_call(self._send_arm_packets, session, packets)
+            for cand in authorisation_code_candidates(code, user_num=user_num):
+                try:
+                    packets = build_arm_sequence(action, cand, sections)
+                except ValueError as exc:
+                    detail = str(exc) or "invalid_pin_code"
+                    continue
+                ok, detail = await self._hid_call(self._send_arm_packets, session, packets)
+                if ok:
+                    return True, detail, cand
+                if detail != "wrong_pin_code":
+                    return False, detail, working
+        return False, detail, working
 
     async def activate_device_stream(
         self,
@@ -685,8 +709,7 @@ class UsbDeviceManager:
             self._devices_found = max(len(found_paths), len(self._sessions), len(scanned))
             if found_paths and not self._sessions:
                 self._set_usb_error(
-                    "Thấy thiết bị USB nhưng không mở được HID — kiểm tra quyền (plugdev/udev) "
-                    "hoặc tắt phần mềm Jablotron khác đang chiếm cổng."
+                    "Thấy thiết bị USB nhưng không mở được HID — tắt phần mềm Jablotron khác đang chiếm cổng."
                 )
             elif found_paths:
                 self._last_error = None
@@ -695,7 +718,7 @@ class UsbDeviceManager:
 
                 logging.getLogger("uvicorn.error").warning(
                     "USB scan: 0 thiết bị Jablotron (VID=0x%04X PID=0x%04X). "
-                    "Linux: deploy-usb-linux.sh | Windows: deploy-usb-windows.ps1 "
+                    "Windows: deploy-usb-windows.ps1 "
                     "(backend native :8010 + Docker UI, không đặt backend trong container).",
                     self.settings.jablotron_vendor_id,
                     self.settings.jablotron_product_id,

@@ -710,7 +710,7 @@ export async function groupAction(
   panelIds: string[],
   action: GroupAction,
   detail?: string,
-  opts?: { code?: string; section_num?: number },
+  opts?: { code?: string; section_num?: number; user_num?: number },
 ) {
   const res = await apiFetch('/api/panels/group-action', {
     method: 'POST',
@@ -721,6 +721,7 @@ export async function groupAction(
       detail,
       code: opts?.code,
       section_num: opts?.section_num,
+      user_num: opts?.user_num,
     }),
   })
   if (!res.ok) throw new Error(await parseError(res))
@@ -971,6 +972,7 @@ export type SystemSettings = {
   sound_enabled: boolean
   trail_enabled: boolean
   site_title?: string
+  site_logo?: AlertSoundSlot | null
   sounds: Partial<Record<'alarm' | 'tamper' | 'fault' | 'loss', AlertSoundSlot | null>>
 }
 
@@ -1009,6 +1011,20 @@ export async function deleteAlertSound(
   status: 'alarm' | 'tamper' | 'fault' | 'loss',
 ): Promise<SystemSettings> {
   const res = await apiFetch(`/api/system/sounds/${status}`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function uploadSiteLogo(file: File): Promise<SystemSettings> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await apiFetch('/api/system/logo', { method: 'POST', body: form })
+  if (!res.ok) throw new Error(await parseError(res))
+  return res.json()
+}
+
+export async function deleteSiteLogo(): Promise<SystemSettings> {
+  const res = await apiFetch('/api/system/logo', { method: 'DELETE' })
   if (!res.ok) throw new Error(await parseError(res))
   return res.json()
 }
@@ -1058,6 +1074,8 @@ export type HostPorts = {
   api_port_default: number
   ui_url: string
   api_url: string
+  lan_ip?: string | null
+  client_url?: string | null
   os: string
   applied: boolean | null
   detail: string | null

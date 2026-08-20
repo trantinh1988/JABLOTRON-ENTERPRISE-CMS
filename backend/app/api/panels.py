@@ -418,6 +418,7 @@ async def group_action(
         detail=body.detail,
         code=body.code,
         section_num=body.section_num,
+        user_num=body.user_num,
     )
     return GroupActionOut.model_validate(result)
 

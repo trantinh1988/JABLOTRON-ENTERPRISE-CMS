@@ -26,6 +26,7 @@ MEDIA_DIRS = (
     "map_backgrounds",
     "map_snaps",
     "alert_sounds",
+    "brand",
     "camera_thumbs",
     "alarm_snaps",
 )

@@ -5,6 +5,7 @@ Binary packing matches kukulich/jablotron100: multi-byte little-endian.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import IntEnum
 
@@ -44,6 +45,9 @@ SECTION_MODE_ARM_HOME = 0xAF
 CODE_MIN_LENGTH = 4
 CODE_MAX_LENGTH = 10
 DEFAULT_AUTH_PREFIX = "999"
+_PIN_PLAIN_RE = re.compile(rf"^\d{{{CODE_MIN_LENGTH},{CODE_MAX_LENGTH}}}$")
+_PIN_PREFIXED_RE = re.compile(rf"^(\d{{1,2}})\*(\d{{{CODE_MIN_LENGTH},{CODE_MAX_LENGTH}}})$")
+AUTH_CODE_PATTERN = rf"^(\d{{{CODE_MIN_LENGTH},{CODE_MAX_LENGTH}}}|\d{{1,2}}\*\d{{{CODE_MIN_LENGTH},{CODE_MAX_LENGTH}}})$"
 
 DEVICE_STATE_EVENT_MASK = 0x1F
 DEVICE_STATE_FLAGS_MASK = 0xE0
@@ -398,6 +402,44 @@ def create_packet_ui_control(control_type: bytes, data: bytes = b"") -> bytes:
 
 def create_packet_authorisation_end() -> bytes:
     return create_packet_ui_control(UI_CONTROL_AUTHORISATION_END)
+
+
+def authorisation_code_candidates(code: str, user_num: int | None = None) -> list[str]:
+    """PIN-only and F-Link ``N*PIN`` forms to try on the wire.
+
+    User 1 (Administrator / Master) usually works without a prefix. User 2+
+    need ``N*PIN`` when F-Link “code with a prefix” is on. Try the likely
+    form first, then the other so both F-Link modes work.
+    """
+    raw = (code or "").strip()
+    if not raw:
+        return []
+    prefixed = _PIN_PREFIXED_RE.fullmatch(raw)
+    if prefixed:
+        slot = int(prefixed.group(1))
+        pin = prefixed.group(2)
+    elif _PIN_PLAIN_RE.fullmatch(raw):
+        slot = int(user_num) if user_num is not None else None
+        pin = raw
+    else:
+        return [raw]
+
+    out: list[str] = []
+
+    def add(item: str) -> None:
+        if item and item not in out:
+            out.append(item)
+
+    if slot is None:
+        add(pin)
+        return out
+    if slot == 1:
+        add(pin)
+        add(f"{slot}*{pin}")
+    else:
+        add(f"{slot}*{pin}")
+        add(pin)
+    return out
 
 
 def create_packet_authorisation_code(code: str, prefix: str = DEFAULT_AUTH_PREFIX) -> bytes:

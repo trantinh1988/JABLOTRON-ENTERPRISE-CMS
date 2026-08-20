@@ -31,10 +31,13 @@ from app.iot_core.system_backup import (
 from app.iot_core.system_sounds import (
     ALERT_SOUND_STATUSES,
     delete_alert_sound,
+    delete_site_logo,
     ensure_alert_sounds_dir,
+    ensure_brand_dir,
     get_system_settings,
     patch_system_settings,
     save_alert_sound,
+    save_site_logo,
 )
 from app.iot_core.usb_manager import get_usb_manager
 from app.schemas.common import (
@@ -52,9 +55,21 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 
 _ERRORS = {
     "bad_status": "Trạng thái không hợp lệ.",
-    "empty": "File âm thanh trống.",
+    "empty": "File trống.",
+    "too_big": "File vượt quá dung lượng cho phép.",
+    "bad_type": "Định dạng file không hỗ trợ.",
+}
+
+_SOUND_ERRORS = {
+    **_ERRORS,
     "too_big": "File vượt quá 2MB.",
     "bad_type": "Chỉ hỗ trợ MP3, WAV, OGG, M4A hoặc WEBM.",
+}
+
+_LOGO_ERRORS = {
+    **_ERRORS,
+    "too_big": "Logo vượt quá 1MB.",
+    "bad_type": "Chỉ hỗ trợ PNG, JPG, WEBP hoặc SVG.",
 }
 
 _BACKUP_ERRORS = {
@@ -103,7 +118,7 @@ async def upload_alert_sound(
     try:
         state = save_alert_sound(key, file.filename or "sound", file.content_type or "", raw)
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=_ERRORS.get(str(exc), _ERRORS["bad_type"])) from exc
+        raise HTTPException(status_code=400, detail=_SOUND_ERRORS.get(str(exc), _SOUND_ERRORS["bad_type"])) from exc
     return _to_out(state)
 
 
@@ -115,8 +130,30 @@ async def remove_alert_sound(status: str, _: RequireWriteLicense) -> SystemSetti
     return _to_out(delete_alert_sound(key))
 
 
+@router.post("/logo", response_model=SystemSettingsOut)
+async def upload_site_logo(
+    _: RequireWriteLicense,
+    file: UploadFile = File(...),
+) -> SystemSettingsOut:
+    raw = await file.read()
+    try:
+        state = save_site_logo(file.filename or "logo", file.content_type or "", raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=_LOGO_ERRORS.get(str(exc), _LOGO_ERRORS["bad_type"])) from exc
+    return _to_out(state)
+
+
+@router.delete("/logo", response_model=SystemSettingsOut)
+async def remove_site_logo(_: RequireWriteLicense) -> SystemSettingsOut:
+    return _to_out(delete_site_logo())
+
+
 def media_dir() -> Path:
     return ensure_alert_sounds_dir()
+
+
+def brand_dir() -> Path:
+    return ensure_brand_dir()
 
 
 def _host_out(state: dict) -> HostServiceOut:

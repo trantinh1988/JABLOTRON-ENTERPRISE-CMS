@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AlarmMapFocus } from './components/AlarmMapFocus'
 import { AppShell } from './components/AppShell'
 import { UiLoginGate } from './components/UiLoginScreen'
+import { UiScreenLock } from './components/UiScreenLock'
 import { LICENSE_FEATURE_ENABLED } from './config/features'
 import { useCmsData } from './hooks/useCmsData'
 import { OperatorSessionProvider } from './hooks/useOperatorSession'
@@ -24,6 +25,7 @@ export default function App() {
     <BrowserRouter>
       <OperatorSessionProvider panels={data.panels} cmsReady={data.cmsReady}>
         <UiLoginGate>
+          <UiScreenLock>
           <AlarmMapFocus />
           <Routes>
         <Route
@@ -166,6 +168,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
+          </UiScreenLock>
         </UiLoginGate>
       </OperatorSessionProvider>
     </BrowserRouter>

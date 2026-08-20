@@ -32,7 +32,7 @@ def test_reject_same_and_range():
 
 
 def test_nginx_windows_bridge():
-    text = hp._nginx_conf(ui_port=9090, api_port=8011, hostnet=False)
+    text = hp._nginx_conf(ui_port=9090, api_port=8011)
     assert "listen 80;" in text
     assert "host.docker.internal:8011" in text
     assert "9090" in text.split("\n")[0]
@@ -40,6 +40,8 @@ def test_nginx_windows_bridge():
     assert "client_max_body_size 256m;" in text
     assert "proxy_pass http://host.docker.internal:8011;" in text
     assert "proxy_pass http://host.docker.internal:8011/api/;" not in text
+    assert "Cache-Control" in text
+    assert "location = /index.html" in text
 
 
 def test_docker_backend_does_not_rewrite_host_nginx(tmp_path: Path, monkeypatch):
@@ -53,15 +55,6 @@ def test_docker_backend_does_not_rewrite_host_nginx(tmp_path: Path, monkeypatch)
     finally:
         hp.set_ports_path(None)
         monkeypatch.delenv("CMS_IN_DOCKER", raising=False)
-
-
-def test_nginx_linux_hostnet():
-    text = hp._nginx_conf(ui_port=9090, api_port=8011, hostnet=True)
-    assert "listen 9090;" in text
-    assert "127.0.0.1:8011" in text
-    assert "host.docker.internal" not in text
-    assert "proxy_pass http://127.0.0.1:8011;" in text
-    assert "proxy_pass http://127.0.0.1:8011/api/;" not in text
 
 
 def test_replace_runtime_file_removes_docker_leftover_dir(tmp_path: Path):

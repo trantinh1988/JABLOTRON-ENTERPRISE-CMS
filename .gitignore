@@ -16,10 +16,12 @@ backend/data/map_backgrounds/
 backend/data/camera_thumbs/
 backend/data/alarm_snaps/
 backend/data/map_snaps/
+backend/data/brand/
 backend/data/host_ports.json
 backend/data/cms-ports.env
 backend/data/nginx-ui.conf
 backend/data/camera.key
+backend/data/webview/
 *.req
 *.lic
 
@@ -35,3 +37,4 @@ Thumbs.db
 # Frontend (later)
 node_modules/
 dist/
+build/

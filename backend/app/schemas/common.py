@@ -280,8 +280,14 @@ class GroupActionIn(BaseModel):
     panel_ids: list[str] = Field(..., min_length=1)
     action: Literal["arm", "disarm", "partial"]
     detail: str | None = Field(None, max_length=256)
-    code: str | None = Field(None, min_length=4, max_length=10, pattern=r"^\d{4,10}$")
+    code: str | None = Field(
+        None,
+        min_length=4,
+        max_length=13,
+        pattern=r"^(\d{4,10}|\d{1,2}\*\d{4,10})$",
+    )
     section_num: int | None = Field(None, ge=1, le=32)
+    user_num: int | None = Field(None, ge=0, le=99)
 
 
 class GroupActionOut(BaseModel):
@@ -486,6 +492,7 @@ class SystemSettingsOut(BaseModel):
     sound_enabled: bool = False
     trail_enabled: bool = True
     site_title: str = ""
+    site_logo: AlertSoundSlotOut | None = None
     sounds: dict[str, AlertSoundSlotOut | None] = Field(
         default_factory=lambda: {"alarm": None, "tamper": None, "fault": None, "loss": None}
     )
@@ -524,6 +531,8 @@ class HostPortsOut(BaseModel):
     api_port_default: int = 8010
     ui_url: str
     api_url: str
+    lan_ip: str | None = None
+    client_url: str | None = None
     os: str = "other"
     applied: bool | None = None
     detail: str | None = None

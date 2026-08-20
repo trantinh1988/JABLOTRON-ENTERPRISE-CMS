@@ -1,4 +1,4 @@
-"""Windows Startup folder / Linux systemd --user autostart helpers."""
+"""Windows Startup folder autostart helpers."""
 
 from types import SimpleNamespace
 
@@ -25,13 +25,6 @@ def test_windows_status_enabled_via_startup_file(monkeypatch, tmp_path):
     assert state["autostart_supported"] is True
     assert state["autostart_enabled"] is True
     assert "start-cms-windows.ps1" in state["start_script"]
-
-
-def test_linux_unit_mentions_start_script(monkeypatch):
-    monkeypatch.setattr(host, "current_os", lambda: "linux")
-    text = host._linux_unit_text()
-    assert "start-cms-linux.sh" in text
-    assert "WantedBy=default.target" in text
 
 
 def test_windows_enable_writes_startup_cmd(monkeypatch, tmp_path):
@@ -71,28 +64,12 @@ def test_windows_disable_removes_startup_cmd(monkeypatch, tmp_path):
     assert not vbs.exists()
 
 
-def test_linux_enable_writes_user_unit(monkeypatch, tmp_path):
-    script = tmp_path / "start-cms-linux.sh"
-    script.write_text("#!/bin/bash\n", encoding="utf-8")
-    unit = tmp_path / "jablotron-cms.service"
+def test_linux_autostart_unsupported(monkeypatch):
     monkeypatch.setattr(host, "current_os", lambda: "linux")
-    monkeypatch.setattr(host, "start_script", lambda: script)
-    monkeypatch.setattr(host, "linux_unit_path", lambda: unit)
-    monkeypatch.setattr(host, "_run", lambda *a, **k: _ok())
-    monkeypatch.setattr(host, "_docker_ok", lambda: True)
-    monkeypatch.setattr(host, "_linux_enabled", lambda: True)
-    state = host.set_autostart(True)
-    assert state["ok"] is True
-    assert unit.is_file()
-    body = unit.read_text(encoding="utf-8")
-    assert str(script).replace("\\", "/") in body.replace("\\", "/")
-
-
-def test_unsupported_os(monkeypatch):
-    monkeypatch.setattr(host, "current_os", lambda: "other")
     monkeypatch.setattr(host, "_docker_ok", lambda: None)
     state = host.set_autostart(True)
     assert state["ok"] is False
+    assert state["autostart_supported"] is False
     assert state["detail"] == "autostart_unsupported"
 
 

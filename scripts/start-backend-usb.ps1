@@ -2,7 +2,7 @@
 # Chay script nay TRUOC, sau do: docker compose -f docker-compose.usb-host.yml up -d --build
 #
 # Docker Desktop tren Windows khong passthrough USB HID vao container.
-# Kien truc dung (giong Linux): backend native tren host + UI trong Docker.
+# Backend native tren host + UI trong Docker.
 
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")

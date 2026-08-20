@@ -21,7 +21,8 @@ type Props = {
   trailSnapBusyMapId?: number | null
   onTrailSnap?: (mapId: number, blob: Blob) => void | Promise<void>
   onTrailSnapError?: (message: string) => void
-  onSlotsChange: (slots: (number | null)[]) => void
+  onSlotsChange?: (slots: (number | null)[]) => void
+  assignable?: boolean
   onSelectDevice: (globalId: string | null) => void
   onExpandMap: (mapId: number) => void
 }
@@ -42,6 +43,7 @@ export function MapGridView({
   onTrailSnap,
   onTrailSnapError,
   onSlotsChange,
+  assignable = true,
   onSelectDevice,
   onExpandMap,
 }: Props) {
@@ -94,7 +96,11 @@ export function MapGridView({
             onTrailSnap={onTrailSnap && floor ? (blob) => onTrailSnap(floor.id, blob) : undefined}
             onTrailSnapError={onTrailSnapError}
             alarmFocus={floor != null && alarmMapId === floor.id}
-            onAssign={(id) => onSlotsChange(assignSlot(cells, index, id))}
+            onAssign={
+              assignable && onSlotsChange
+                ? (id) => onSlotsChange(assignSlot(cells, index, id))
+                : undefined
+            }
             onSelectDevice={onSelectDevice}
             onExpand={() => {
               if (floor) onExpandMap(floor.id)

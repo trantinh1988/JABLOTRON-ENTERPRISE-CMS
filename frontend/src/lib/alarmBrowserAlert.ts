@@ -129,6 +129,11 @@ export function alertBrowserOnAlarm(opts: {
     /* ignore */
   }
 
+  const api = window.pywebview?.api
+  if (api && typeof api.raise_on_alarm === 'function') {
+    void api.raise_on_alarm().catch(() => undefined)
+  }
+
   if (document.hidden || document.visibilityState !== 'visible') {
     if (isAlarmTitleFlashEnabled()) startTitleFlash(caption)
   }
@@ -157,5 +162,17 @@ export function alertBrowserOnAlarm(opts: {
     }
   } catch {
     /* ignore */
+  }
+}
+
+declare global {
+  interface Window {
+    pywebview?: {
+      api?: {
+        raise_on_alarm?: () => Promise<unknown>
+        set_title?: (title: string) => Promise<unknown>
+        refresh_branding?: (title?: string) => Promise<unknown>
+      }
+    }
   }
 }

@@ -364,6 +364,24 @@ def test_authorisation_code_1234_matches_ha_wire():
     assert pkt[3:] == bytes([0x39, 0x39, 0x39, 0x31, 0x32, 0x33, 0x34])
 
 
+def test_authorisation_code_candidates_user2_prefix_first():
+    from app.iot_core.jablotron_protocol import authorisation_code_candidates
+
+    assert authorisation_code_candidates("5678", user_num=2) == ["2*5678", "5678"]
+    assert authorisation_code_candidates("1234", user_num=1) == ["1234", "1*1234"]
+    assert authorisation_code_candidates("2*5678") == ["2*5678", "5678"]
+    assert authorisation_code_candidates("1234") == ["1234"]
+
+
+def test_authorisation_code_prefix_packet_matches_ha():
+    from app.iot_core.jablotron_protocol import create_packet_authorisation_code
+
+    pkt = create_packet_authorisation_code("2*1234")
+    # rjust 8 → "002*1234", skip * → 0,0,2,1,2,3,4 as 0x30+n
+    assert pkt[:3] == bytes([0x80, 0x08, 0x03])
+    assert pkt[3:] == bytes([0x30, 0x30, 0x32, 0x31, 0x32, 0x33, 0x34])
+
+
 def test_sections_states_mixed_is_partial_not_whole_disarm():
     """Armed + disarmed sections must not report panel_armed=disarmed."""
     # 0x51 layout: section N at offset N*2 (2 bytes, primary in low 3 bits)

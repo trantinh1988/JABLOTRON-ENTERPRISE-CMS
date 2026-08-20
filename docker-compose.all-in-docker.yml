@@ -1,5 +1,5 @@
 # UI + backend trong Docker — mock, không USB.
-# Chạy được Windows (Docker Desktop) và Linux (VPS).
+# Dùng trên Windows (Docker Desktop).
 #
 #   docker compose -f docker-compose.all-in-docker.yml up -d --build
 #

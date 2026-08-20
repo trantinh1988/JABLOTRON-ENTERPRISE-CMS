@@ -13,10 +13,14 @@ from app.core.config import BACKEND_ROOT
 
 ALERT_SOUND_STATUSES = ("alarm", "tamper", "fault", "loss")
 ALERT_SOUND_MAX_BYTES = 2 * 1024 * 1024
+LOGO_MAX_BYTES = 1 * 1024 * 1024
 MEDIA_PREFIX = "/media/alert-sounds"
+LOGO_MEDIA_PREFIX = "/media/brand"
 
 _DEFAULT_DIR = BACKEND_ROOT / "data" / "alert_sounds"
+_DEFAULT_BRAND_DIR = BACKEND_ROOT / "data" / "brand"
 _dir_override: Path | None = None
+_brand_override: Path | None = None
 _lock = threading.Lock()
 
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._\- ()\u00C0-\u024F\u1E00-\u1EFF]+")
@@ -27,8 +31,19 @@ def set_alert_sounds_dir(path: Path | None) -> None:
     _dir_override = path
 
 
+def set_brand_dir(path: Path | None) -> None:
+    global _brand_override
+    _brand_override = path
+
+
 def ensure_alert_sounds_dir() -> Path:
     d = _dir_override or _DEFAULT_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def ensure_brand_dir() -> Path:
+    d = _brand_override or _DEFAULT_BRAND_DIR
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -42,6 +57,7 @@ def _empty_state() -> dict[str, Any]:
         "sound_enabled": False,
         "trail_enabled": True,
         "site_title": "",
+        "site_logo": None,
         "sounds": {key: None for key in ALERT_SOUND_STATUSES},
     }
 
@@ -63,6 +79,13 @@ def _read_state() -> dict[str, Any]:
         state["trail_enabled"] = raw["trail_enabled"]
     if isinstance(raw.get("site_title"), str):
         state["site_title"] = _normalize_site_title(raw["site_title"])
+    logo = raw.get("site_logo")
+    if isinstance(logo, dict) and logo.get("url") and logo.get("name"):
+        state["site_logo"] = {
+            "name": str(logo["name"])[:200],
+            "url": str(logo["url"]),
+            "type": str(logo.get("type") or ""),
+        }
     sounds = raw.get("sounds")
     if isinstance(sounds, dict):
         for key in ALERT_SOUND_STATUSES:
@@ -206,4 +229,87 @@ def delete_alert_sound(status: str) -> dict[str, Any]:
         state["sounds"][status] = None
         _write_state(state)
         _unlink_slot(old)
+        return state
+
+
+def _sniff_logo_ext(filename: str, content_type: str, raw: bytes) -> str | None:
+    name = filename.lower()
+    ctype = (content_type or "").split(";")[0].strip().lower()
+    if raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        return ".png"
+    if len(raw) >= 3 and raw[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if raw.startswith(b"RIFF") and len(raw) >= 12 and raw[8:12] == b"WEBP":
+        return ".webp"
+    head = raw[:256].lstrip().lower()
+    if head.startswith(b"<svg") or (head.startswith(b"<?xml") and b"<svg" in raw[:2048].lower()):
+        return ".svg"
+    by_name = {".png": ".png", ".jpg": ".jpg", ".jpeg": ".jpg", ".webp": ".webp", ".svg": ".svg"}
+    for suffix, ext in by_name.items():
+        if name.endswith(suffix):
+            return ext
+    return {
+        "image/png": ".png",
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/webp": ".webp",
+        "image/svg+xml": ".svg",
+    }.get(ctype)
+
+
+def _unlink_logo(slot: dict[str, Any] | None) -> None:
+    if not slot:
+        return
+    url = str(slot.get("url") or "")
+    if not url.startswith(f"{LOGO_MEDIA_PREFIX}/"):
+        return
+    name = Path(url.split("?", 1)[0]).name
+    if not name or name in {".", ".."} or "/" in name or "\\" in name:
+        return
+    path = ensure_brand_dir() / name
+    try:
+        if path.is_file():
+            path.unlink()
+    except OSError:
+        pass
+
+
+def save_site_logo(filename: str, content_type: str, raw: bytes) -> dict[str, Any]:
+    if not raw:
+        raise ValueError("empty")
+    if len(raw) > LOGO_MAX_BYTES:
+        raise ValueError("too_big")
+    ext = _sniff_logo_ext(filename, content_type, raw)
+    if not ext:
+        raise ValueError("bad_type")
+    dest_name = f"logo_{uuid.uuid4().hex}{ext}"
+    dest = ensure_brand_dir() / dest_name
+    dest.write_bytes(raw)
+    mime = {
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".webp": "image/webp",
+        ".svg": "image/svg+xml",
+    }.get(ext, (content_type or "").split(";")[0].strip())
+    slot = {
+        "name": _display_name(filename),
+        "url": f"{LOGO_MEDIA_PREFIX}/{dest_name}",
+        "type": mime or f"image/{ext.lstrip('.')}",
+    }
+    with _lock:
+        state = _read_state()
+        old = state.get("site_logo")
+        state["site_logo"] = slot
+        _write_state(state)
+        _unlink_logo(old if isinstance(old, dict) else None)
+        return state
+
+
+def delete_site_logo() -> dict[str, Any]:
+    with _lock:
+        state = _read_state()
+        old = state.get("site_logo")
+        state["site_logo"] = None
+        _write_state(state)
+        _unlink_logo(old if isinstance(old, dict) else None)
         return state

@@ -79,6 +79,7 @@ import {
   writeMapGridState,
   type MapGridLayout,
 } from '../lib/mapGridLayout'
+import { useOperatorSession } from '../hooks/useOperatorSession'
 import { deviceStateLabel, effectiveDeviceStatus, labelOf, vi } from '../i18n/vi'
 import { reactionShowsMapChip } from '../lib/deviceReaction'
 
@@ -154,6 +155,8 @@ export function MapsPage({
   liveFlashIds,
   onRefresh,
 }: Props) {
+  const { canSettings } = useOperatorSession()
+  const canEditUi = writeAllowed && canSettings
   const [searchParams, setSearchParams] = useSearchParams()
   const [activeId, setActiveId] = useState<number | null>(maps[0]?.id ?? null)
   const [editMode, setEditMode] = useState(false)
@@ -285,7 +288,7 @@ export function MapsPage({
     [],
   )
 
-  const canEdit = writeAllowed && editMode
+  const canEdit = canEditUi && editMode
 
   // Deep-link / alarm focus: /maps?map=2&device=PANEL_1_DEV_10&focus=alarm&t=…
   // Không phụ thuộc `devices` — mỗi lần WS cập nhật devices từng làm effect chạy lại và dễ nuốt focus.
@@ -522,13 +525,25 @@ export function MapsPage({
 
   useEffect(() => {
     if (resumeHint != null || alarmResumeRef.current) return
-    writeMapGridState({ layout, slots })
-  }, [layout, slots, resumeHint])
+    if (canEditUi) {
+      writeMapGridState({ layout, slots })
+      return
+    }
+    const prev = readMapGridState()
+    writeMapGridState({
+      layout,
+      slots: prev.slots.length ? resizeSlots(layout, maps, prev.slots) : slots,
+    })
+  }, [layout, slots, resumeHint, canEditUi, maps])
 
   useEffect(() => {
     if (activeId == null) return
     setBgFitState(readMapBgFit(activeId))
   }, [activeId])
+
+  useEffect(() => {
+    if (!canEditUi && editMode) setEditMode(false)
+  }, [canEditUi, editMode])
 
   useEffect(() => {
     if (!editMode) {
@@ -894,11 +909,15 @@ export function MapsPage({
       legendAsIcon={!sidebarOpen || fullscreen}
       labelMode={labelMode}
       bgFit={bgFit}
-      onLabelModeChange={setLabelMode}
-      onBgFitChange={(next) => {
-        setBgFitState(next)
-        if (activeId != null) writeMapBgFit(activeId, next)
-      }}
+      onLabelModeChange={canEditUi ? setLabelMode : undefined}
+      onBgFitChange={
+        canEditUi
+          ? (next) => {
+              setBgFitState(next)
+              if (activeId != null) writeMapBgFit(activeId, next)
+            }
+          : undefined
+      }
       onSelect={setSelectedId}
       onPlace={placeAt}
       onMove={moveDevice}
@@ -928,7 +947,8 @@ export function MapsPage({
       trailSnapBusyMapId={snapBusyMapId}
       onTrailSnap={writeAllowed ? handleTrailSnap : undefined}
       onTrailSnapError={setError}
-      onSlotsChange={setSlots}
+      onSlotsChange={canEditUi ? setSlots : undefined}
+      assignable={canEditUi}
       onSelectDevice={(id) => {
         setSelectedId(id)
         if (!id) return
@@ -951,7 +971,7 @@ export function MapsPage({
     'hidden shrink-0 select-none px-0.5 text-[9px] font-semibold tracking-wide text-steel/45 uppercase xl:inline'
 
   const toolbar = (
-    <div className="flex w-full shrink-0 items-center gap-2">
+      <div className="flex w-full shrink-0 items-center gap-2">
       <div className={toolGroup} role="group" aria-label={vi.mapGridLayout}>
         <span className={toolGroupLabel}>{vi.mapGridLayout}</span>
         <MapLayoutPicker layout={layout} onChange={applyLayout} btnClass={segBtn} />
@@ -989,6 +1009,7 @@ export function MapsPage({
       {/* Nhãn / Ảnh / Bản đồ / Xem — sát phải */}
       <div className="ml-auto flex shrink-0 flex-wrap items-center justify-end gap-2">
         {/* Nhãn marker — gộp thành 1 menu */}
+        {canEditUi && (
         <div
           ref={labelMenuRef}
           className={`${toolGroup} relative`}
@@ -1036,6 +1057,7 @@ export function MapsPage({
             </div>
           )}
         </div>
+        )}
 
       {/* Ảnh nền — upload / xóa / đồng bộ tỉ lệ (Vừa/Phủ/Giãn nằm trên canvas) */}
       {canEdit && active?.background_url && (
@@ -1144,9 +1166,9 @@ export function MapsPage({
       {/* Chế độ xem */}
       <div className={toolGroup} role="group" aria-label={vi.mapToolGroupView}>
         <span className={toolGroupLabel}>{vi.mapToolGroupView}</span>
+        {canEditUi && (
         <button
           type="button"
-          disabled={!writeAllowed}
           onClick={() => {
             setEditMode((v) => {
               const next = !v
@@ -1172,6 +1194,7 @@ export function MapsPage({
           <Pencil className="size-3.5" />
           <span className="hidden sm:inline">{editMode ? vi.editModeOn : vi.editMode}</span>
         </button>
+        )}
 
         {!fullscreen && !isGrid && !showAlarmCameras && (
           <button
@@ -1593,7 +1616,9 @@ export function MapsPage({
       {toolbar}
 
       {!writeAllowed && (
-        <p className="shrink-0 rounded-md bg-warn/10 px-3 py-1.5 text-xs text-warn">{vi.readOnlyHint}</p>
+        <p className="shrink-0 rounded-md bg-warn/10 px-3 py-1.5 text-xs text-warn">
+          {vi.readOnlyHint}
+        </p>
       )}
       {error && (
         <p className="shrink-0 rounded-md bg-danger/10 px-3 py-1.5 text-xs text-danger">{error}</p>
@@ -1622,7 +1647,7 @@ export function MapsPage({
           <div className="max-w-sm px-6 py-10 text-center">
             <MapIcon className="mx-auto size-8 text-steel/40" />
             <p className="mt-3 text-sm text-steel/70">{vi.noMaps}</p>
-            {writeAllowed && (
+            {canEditUi && (
               <Btn
                 className="mt-4"
                 onClick={() => {

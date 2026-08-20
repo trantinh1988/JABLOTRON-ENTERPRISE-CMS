@@ -687,6 +687,7 @@ class PanelBus:
         detail: str | None = None,
         code: str | None = None,
         section_num: int | None = None,
+        user_num: int | None = None,
     ) -> dict[str, Any]:
         results: list[dict[str, Any]] = []
         for panel_id in panel_ids:
@@ -700,6 +701,7 @@ class PanelBus:
                     "detail": detail,
                     "code": code,
                     "section_num": section_num,
+                    "user_num": user_num,
                     "done": done,
                 }
             )
@@ -723,6 +725,7 @@ class PanelBus:
                 operator_detail = cmd.get("detail")
                 code = cmd.get("code")
                 section_num = cmd.get("section_num")
+                user_num = cmd.get("user_num")
                 ok = True
                 detail = "mock_ok"
                 if self._command_sender is not None:
@@ -731,6 +734,7 @@ class PanelBus:
                         action,
                         code=code,
                         section_num=section_num,
+                        user_num=user_num,
                     )
                 if ok:
                     event_detail = operator_detail or detail

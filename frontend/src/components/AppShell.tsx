@@ -6,6 +6,7 @@ import {
   History,
   LayoutDashboard,
   List,
+  Lock,
   LogOut,
   Map as MapIcon,
   Menu,
@@ -90,7 +91,7 @@ export function AppShell({
   const mode = license?.mode ?? 'read-only'
   const full = mode === 'full'
   const location = useLocation()
-  const { session, canSettings, logout } = useOperatorSession()
+  const { session, canSettings, canLock, lock, logout } = useOperatorSession()
   const settingsActive = pathInSettings(location.pathname)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [statusOpen, setStatusOpen] = useState(false)
@@ -337,6 +338,23 @@ export function AppShell({
               {session && (
                 <>
                   <div className="mx-0.5 hidden h-4 w-px bg-line/80 sm:block" aria-hidden />
+                  {canLock && (
+                    <button
+                      type="button"
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold text-steel transition hover:bg-fog hover:text-ink"
+                      aria-label={vi.lockScreen}
+                      title={vi.lockScreen}
+                      onClick={() => {
+                        setStatusOpen(false)
+                        setSettingsOpen(false)
+                        setAccountOpen(false)
+                        lock()
+                      }}
+                    >
+                      <Lock className="size-3.5 shrink-0 opacity-85" />
+                      <span>{vi.lockScreen}</span>
+                    </button>
+                  )}
                   <div ref={accountRef} className="relative hidden sm:block">
                     <button
                       type="button"
@@ -376,6 +394,20 @@ export function AppShell({
                           </p>
                         </div>
                         <div className="mx-2 border-t border-line/80" />
+                        {canLock && (
+                          <button
+                            type="button"
+                            role="menuitem"
+                            className="flex w-full items-center gap-2 px-3 py-2 text-[13px] font-medium text-steel transition hover:bg-fog hover:text-ink"
+                            onClick={() => {
+                              setAccountOpen(false)
+                              lock()
+                            }}
+                          >
+                            <Lock className="size-3.5 shrink-0 opacity-85" />
+                            {vi.lockScreen}
+                          </button>
+                        )}
                         <button
                           type="button"
                           role="menuitem"
@@ -462,6 +494,20 @@ export function AppShell({
                 </>
               )}
               {session && (
+                <>
+                {canLock && (
+                  <button
+                    type="button"
+                    className="mt-2 flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-steel hover:bg-mist hover:text-ink"
+                    onClick={() => {
+                      setMobileOpen(false)
+                      lock()
+                    }}
+                  >
+                    <Lock className="size-4 shrink-0 opacity-85" />
+                    {vi.lockScreen}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="mt-2 flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium text-steel hover:bg-mist hover:text-ink"
@@ -473,6 +519,7 @@ export function AppShell({
                   <LogOut className="size-4 shrink-0 opacity-85" />
                   {vi.logout} · {session.userName}
                 </button>
+                </>
               )}
             </nav>
           </div>

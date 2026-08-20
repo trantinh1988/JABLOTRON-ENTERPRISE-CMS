@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { armedStateLabel, vi } from '../i18n/vi'
+import { parsePinInput, sanitizePinInput } from '../lib/pinAuth'
 import { Btn } from './ui'
 
 export type SectionPinAction = 'arm' | 'disarm' | 'silence'
@@ -98,16 +99,15 @@ export function SectionPinModal({
             <input
               ref={inputRef}
               type="password"
-              inputMode="numeric"
+              inputMode="text"
               autoComplete="off"
-              pattern="[0-9]*"
-              maxLength={10}
+              maxLength={13}
               value={pin}
               disabled={busy}
               aria-invalid={Boolean(error)}
               aria-describedby={error ? 'section-pin-error' : undefined}
               onChange={(e) => {
-                setPin(e.target.value.replace(/\D/g, '').slice(0, 10))
+                setPin(sanitizePinInput(e.target.value))
                 if (error) onClearError?.()
               }}
               className={`w-full rounded-md border bg-mist px-3 py-2 font-mono text-sm tracking-[0.25em] text-ink outline-none focus:ring-1 ${
@@ -136,7 +136,7 @@ export function SectionPinModal({
             <Btn
               type="submit"
               tone={action === 'disarm' ? 'ok' : 'danger'}
-              disabled={busy || pin.length < 4}
+              disabled={busy || !parsePinInput(pin)}
             >
               {busy ? vi.keypadPinSubmitting : actionLabel}
             </Btn>
